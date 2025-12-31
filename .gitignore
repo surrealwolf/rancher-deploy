@@ -1,0 +1,39 @@
+# Terraform
+.terraform
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode/
+*.code-workspace
+
+# Environment
+.env
+.env.local
+terraform.tfvars
+!terraform.tfvars.example
+
+# Logs
+*.log
+terraform_deploy.log
+
+# Kubeconfigs
+.kube/
+kubeconfig*
+*.kubeconfig
+
+# Misc
+.cache
+temp/

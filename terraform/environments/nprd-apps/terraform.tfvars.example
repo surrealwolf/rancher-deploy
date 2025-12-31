@@ -1,0 +1,23 @@
+# Proxmox Configuration
+proxmox_api_url      = "https://proxmox.example.com:8006/api2/json"
+proxmox_token_id     = "terraform@pam!terraform"
+proxmox_token_secret = "your-api-token-here"
+proxmox_tls_insecure = true
+proxmox_node         = "pve-01"
+
+# VM Template (ID 400 - outside 100-200 range)
+vm_template_id = 400
+
+# SSH Configuration
+ssh_private_key = "~/.ssh/id_rsa"
+
+# Cluster Configuration
+node_count   = 3
+cpu_cores    = 8
+memory_mb    = 16384
+disk_size_gb = 150
+
+# Network Configuration
+gateway     = "192.168.1.1"
+dns_servers = ["8.8.8.8", "8.8.4.4"]
+storage     = "local-lvm"

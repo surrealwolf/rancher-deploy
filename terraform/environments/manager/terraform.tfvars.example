@@ -1,0 +1,22 @@
+# Proxmox Configuration
+proxmox_api_url      = "https://proxmox.example.com:8006/api2/json"
+proxmox_token_id     = "terraform@pam!terraform"
+proxmox_token_secret = "your-api-token-here"
+proxmox_tls_insecure = true
+proxmox_node         = "pve-01"
+
+# VM Template (ID 400 - outside 100-200 range)
+vm_template_id = 400
+
+# SSH Configuration
+ssh_private_key = "~/.ssh/id_rsa"
+
+# Rancher Configuration
+rancher_hostname = "rancher.lab.local"
+rancher_password = "your-secure-password"
+rancher_version  = "v2.7.7"
+
+# Network Configuration
+domain      = "lab.local"
+dns_servers = ["8.8.8.8", "8.8.4.4"]
+storage     = "local-lvm"
