@@ -1,221 +1,258 @@
-# Rancher Cluster on Proxmox - Terraform
+# Rancher Cluster on Proxmox
 
-This Terraform configuration provisions a Rancher cluster on Proxmox with 2 managed clusters:
+Deploy a complete Rancher management cluster and non-production apps cluster on Proxmox using Terraform.
 
-- **rancher-manager**: Rancher management cluster (3 nodes)
-- **nprd-apps**: Non-production apps cluster (3 nodes)
+## Features
+
+- ✅ **Automated VM Provisioning**: Create 6 VMs from template with cloud-init
+- ✅ **Unified Network**: All VMs on VLAN 14 (192.168.14.0/24)
+- ✅ **High Availability**: 3-node manager and 3-node apps clusters
+- ✅ **Reliable Deployment**: Using dataknife/pve provider with retry logic
+- ✅ **Full Documentation**: Architecture, setup, troubleshooting guides
+- ✅ **Infrastructure as Code**: Complete Terraform configuration
+
+## Architecture
+
+- **Rancher Manager Cluster**: 3 nodes (VM 401-403), runs Rancher control plane
+- **NPRD Apps Cluster**: 3 nodes (VM 404-406), non-production workloads
+- **Network**: VLAN 14 (192.168.14.0/24) for unified management
+- **Resources**: 4 CPU cores + 8GB RAM per node
 
 ## Prerequisites
 
-1. **Proxmox**: Access to a Proxmox cluster with API token
-2. **VM Template**: Ubuntu 22.04 LTS template with Cloud-Init support
-3. **Terraform**: v1.0 or higher
-4. **SSH Key**: SSH key for VM access
-5. **kubectl**: For cluster management
-6. **helm**: For Rancher installation
+- **Proxmox VE 9.x**: With API access
+- **Ubuntu 22.04 LTS VM Template**: VM ID 400 with Cloud-Init
+- **Terraform**: v1.0 or later
+- **SSH Key**: For VM access
 
-## Setup
+## Quick Start
 
-### 1. Create Proxmox API Token
+1. **Configure Terraform Variables**
+   ```bash
+   cp terraform/terraform.tfvars.example terraform/terraform.tfvars
+   # Edit with your Proxmox API credentials and settings
+   ```
 
-```bash
-# In Proxmox UI, create a token for Terraform
-# Settings -> Users -> Select user -> API Tokens -> Add Token
-# Give it necessary permissions (Datastore, Nodes, VMs)
+2. **Deploy Clusters**
+   ```bash
+   cd terraform
+   terraform init
+   terraform plan
+   terraform apply
+   ```
+
+3. **Access Clusters**
+   ```bash
+   # Get IP addresses
+   terraform output rancher_manager_ip
+   terraform output nprd_apps_cluster_ips
+   ```
+
+## Documentation
+
+- **[Getting Started](docs/GETTING_STARTED.md)** - Quick setup guide
+- **[Terraform Guide](docs/TERRAFORM_GUIDE.md)** - Detailed deployment instructions
+- **[Architecture](docs/ARCHITECTURE.md)** - System design and components
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[Template Creation](docs/TEMPLATE_CREATION.md)** - VM template setup
+- **[Terraform Improvements](docs/TERRAFORM_IMPROVEMENTS.md)** - Provider migration details
+
+## Project Structure
+
+```
+.
+├── docs/                    # Documentation
+│   ├── GETTING_STARTED.md
+│   ├── TERRAFORM_GUIDE.md
+│   ├── ARCHITECTURE.md
+│   ├── TROUBLESHOOTING.md
+│   ├── TEMPLATE_CREATION.md
+│   └── TERRAFORM_IMPROVEMENTS.md
+├── terraform/               # Terraform configuration
+│   ├── main.tf
+│   ├── provider.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   ├── terraform.tfvars.example
+│   └── modules/proxmox_vm/
+├── scripts/                 # Utility scripts
+│   └── setup.sh
+├── .github/                 # GitHub configuration
+│   └── copilot-instructions.md
+└── README.md                # This file
 ```
 
-### 2. Create Ubuntu VM Template
+## Key Features
+
+### Reliable VM Creation
+
+The deployment uses the **dataknife/pve Terraform provider** (v1.0.0) with:
+- ✅ Exponential backoff retry logic for API calls
+- ✅ Proper task completion verification
+- ✅ Comprehensive error handling
+- ✅ Configurable debug logging (PROXMOX_LOG_LEVEL)
+
+### Automated Configuration
+
+Each VM is automatically configured with:
+- Cloud-init for OS customization
+- Network settings (VLAN 14, static IP, DNS)
+- SSH key-based authentication
+- Hostname and domain configuration
+
+### Cluster Orchestration
+
+- Manager cluster created first
+- Apps cluster waits for manager completion
+- Explicit dependencies ensure proper sequencing
+- Total deployment time: ~2-3 minutes for all 6 VMs
+
+## Usage
+
+### Deployment
 
 ```bash
-# On Proxmox node:
-qm create 100 --name ubuntu-22.04 --memory 2048 --cores 2 --net0 virtio,bridge=vmbr0
-# Download and import Ubuntu 22.04 Cloud-Init image
-# Add serial console, Cloud-Init drive, etc.
-```
+cd terraform
 
-### 3. Configure Variables
-
-Copy the example terraform.tfvars files:
-
-```bash
-cd terraform/environments/manager
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-
-cd ../nprd-apps
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-```
-
-### 4. Initialize and Deploy
-
-#### Deploy Manager Cluster
-
-```bash
-cd terraform/environments/manager
+# Initialize Terraform
 terraform init
-terraform plan
-terraform apply
+
+# Plan changes
+terraform plan -out=tfplan
+
+# Apply configuration
+terraform apply tfplan
 ```
 
-#### Deploy NPRD-Apps Cluster
+### Outputs
+
+After successful deployment:
 
 ```bash
-cd terraform/environments/nprd-apps
-terraform init
-terraform plan
-terraform apply
+# Get manager cluster IPs
+terraform output rancher_manager_ip
+
+# Get apps cluster IPs
+terraform output nprd_apps_cluster_ips
 ```
 
-## Cluster Architecture
-
-### Rancher Manager Cluster
-- **Nodes**: 3 x 4 CPU, 8GB RAM, 100GB disk
-- **Network**: 192.168.1.0/24
-- **Components**:
-  - cert-manager
-  - Rancher Server
-  - Monitoring stack
-
-### NPRD-Apps Cluster
-- **Nodes**: 3 x 8 CPU, 16GB RAM, 150GB disk
-- **Network**: 192.168.2.0/24
-- **Registration**: Automatically registered to Rancher manager
-
-## Post-Deployment
-
-### 1. Install Kubernetes
-
-After VMs are created, install Kubernetes on each node:
+### Testing Access
 
 ```bash
-# SSH into each node
-ssh ubuntu@192.168.1.100
-ssh ubuntu@192.168.1.101
-ssh ubuntu@192.168.1.102
+# SSH to a node
+ssh -i ~/.ssh/id_rsa ubuntu@192.168.14.100
 
-# Run Kubernetes setup script
-curl -s https://raw.githubusercontent.com/rancher/rke2/master/install.sh | INSTALL_RKE2_VERSION="v1.27.0" sh -
-systemctl start rke2-server
+# Verify network
+ping 192.168.14.101
 ```
 
-### 2. Configure Kubeconfig
+### Cleanup
 
 ```bash
-# Copy kubeconfig from manager node
-scp ubuntu@192.168.1.100:/etc/rancher/rke2/rke2.yaml ~/.kube/rancher-manager-config
-# Update server IP in kubeconfig
-
-# For NPRD-Apps cluster
-scp ubuntu@192.168.2.100:/etc/rancher/rke2/rke2.yaml ~/.kube/nprd-apps-config
-```
-
-### 3. Access Rancher
-
-- URL: https://rancher.lab.local
-- Username: admin
-- Password: (from terraform.tfvars)
-
-## Networking
-
-- **Manager Network**: 192.168.1.0/24
-- **NPRD-Apps Network**: 192.168.2.0/24
-- **Gateway**: 192.168.1.1
-- **DNS**: 8.8.8.8, 8.8.4.4
-
-## Cleanup
-
-To destroy the infrastructure:
-
-```bash
-# Remove manager cluster
-cd terraform/environments/manager
-terraform destroy
-
-# Remove NPRD-Apps cluster
-cd terraform/environments/nprd-apps
 terraform destroy
 ```
 
-## Variables Reference
+## Configuration
 
-### Manager Environment (`environments/manager/terraform.tfvars`)
+### Edit Variables
+
+File: `terraform/terraform.tfvars`
 
 ```hcl
-proxmox_api_url      = "https://proxmox.lab.local:8006/api2/json"
-proxmox_token_id     = "terraform@pam!terraform"
-proxmox_token_secret = "your-token"
-proxmox_tls_insecure = true
-proxmox_node         = "pve-01"
-vm_template_id       = 100
-ssh_private_key      = "~/.ssh/id_rsa"
-rancher_hostname     = "rancher.lab.local"
-rancher_password     = "SecurePassword123!"
-```
+# Proxmox API credentials
+proxmox_api_url          = "https://proxmox.example.com:8006/api2/json"
+proxmox_api_user         = "terraform@pam"
+proxmox_api_token_id     = "your-token-id"
+proxmox_api_token_secret = "your-token-secret"
 
-### NPRD-Apps Environment (`environments/nprd-apps/terraform.tfvars`)
+# Proxmox settings
+proxmox_node   = "pve1"
+proxmox_storage = "local-vm-zfs"
 
-```hcl
-proxmox_api_url      = "https://proxmox.lab.local:8006/api2/json"
-proxmox_token_id     = "terraform@pam!terraform"
-proxmox_token_secret = "your-token"
-proxmox_tls_insecure = true
-proxmox_node         = "pve-01"
-vm_template_id       = 100
-ssh_private_key      = "~/.ssh/id_rsa"
-node_count           = 3
-cpu_cores            = 8
-memory_mb            = 16384
-disk_size_gb         = 150
+# VM configuration
+vm_template_id = 400
+ssh_private_key = "~/.ssh/id_rsa"
+
+# Cluster settings
+clusters = {
+  manager = {
+    gateway     = "192.168.14.1"
+    dns_servers = ["192.168.1.1", "192.168.1.2"]
+    domain      = "example.com"
+  }
+  nprd-apps = {
+    gateway     = "192.168.14.1"
+    dns_servers = ["192.168.1.1", "192.168.1.2"]
+    domain      = "example.com"
+  }
+}
 ```
 
 ## Troubleshooting
 
-### VMs not getting IP addresses
-- Ensure Cloud-Init is properly configured in the template
-- Check `qemu-guest-agent` is running on VMs
+### Common Issues
 
-### Rancher UI not accessible
-- Wait 5-10 minutes for Rancher to fully initialize
-- Check cert-manager status: `kubectl get pods -n cert-manager`
-- Check Rancher status: `kubectl get pods -n cattle-system`
+- **VM creation timeout**: Check Proxmox task history, enable debug logging
+- **Network not responding**: Verify VLAN 14 configuration on vmbr0
+- **SSH connection refused**: Ensure cloud-init completed, check authorized_keys
+- **Authentication failed**: Verify API token credentials and permissions
 
-### SSH connection issues
-- Verify SSH key permissions: `chmod 600 ~/.ssh/id_rsa`
-- Ensure security groups allow SSH on port 22
-- Check Proxmox firewall rules
+See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions.
 
-## Module Structure
+### Debug Logging
 
-```
-terraform/
-├── main.tf                 # Main cluster infrastructure
-├── provider.tf            # Terraform providers
-├── variables.tf           # Variable definitions
-├── outputs.tf             # Output definitions
-├── modules/
-│   ├── proxmox_vm/       # VM module
-│   │   ├── main.tf
-│   │   └── variables.tf
-│   └── rancher_cluster/  # Rancher installation module
-│       ├── main.tf
-│       └── outputs.tf
-└── environments/
-    ├── manager/          # Manager cluster environment
-    │   ├── main.tf
-    │   ├── variables.tf
-    │   ├── backend.tf
-    │   └── terraform.tfvars.example
-    └── nprd-apps/        # NPRD-Apps cluster environment
-        ├── main.tf
-        ├── variables.tf
-        ├── backend.tf
-        └── terraform.tfvars.example
+```bash
+# Enable debug output for Terraform
+export TF_LOG=debug
+terraform apply
+
+# Enable debug output for Proxmox provider
+export PROXMOX_LOG_LEVEL=debug
+terraform apply
 ```
 
-## Support
+## Performance
 
-For issues or improvements, refer to:
-- [Telmate Proxmox Provider](https://github.com/Telmate/proxmox-terraformer)
-- [Rancher Documentation](https://rancher.com/docs/)
-- [Terraform Documentation](https://www.terraform.io/docs/)
+Deployment timing (typical):
+- Single VM creation: 20-30 seconds
+- 3-node cluster: 1-1.5 minutes
+- All 6 VMs (sequential): 2-3 minutes
+- All 6 VMs (parallelized): 1-2 minutes
+
+## Provider Information
+
+**Terraform Provider**: dataknife/pve v1.0.0
+
+**Improvements over older providers:**
+- ✅ Reliable task polling with proper retry logic
+- ✅ Better error messages and diagnostics
+- ✅ Full Proxmox VE 9.x support
+- ✅ Improved cloud-init integration
+- ✅ Configurable logging for debugging
+
+**Previous Provider**: telmate/proxmox (deprecated)
+
+## Next Steps
+
+1. **Review Architecture**: [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+2. **Follow Setup Guide**: [GETTING_STARTED.md](docs/GETTING_STARTED.md)
+3. **Deploy with Terraform**: [TERRAFORM_GUIDE.md](docs/TERRAFORM_GUIDE.md)
+4. **Install Kubernetes**: Set up K3s on deployed nodes
+5. **Install Rancher**: Deploy Rancher on manager cluster
+
+## Support & Resources
+
+- **Proxmox Documentation**: https://pve.proxmox.com/wiki/Main_Page
+- **Terraform Docs**: https://www.terraform.io/docs/
+- **Rancher Docs**: https://rancher.com/docs/
+
+## License
+
+This project is licensed under the MIT License.
+
+## Contributing
+
+Contributions are welcome! Please ensure:
+- Documentation is updated
+- Terraform code is properly formatted: `terraform fmt -recursive`
+- Changes are tested before submission

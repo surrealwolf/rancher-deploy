@@ -1,103 +1,415 @@
-# Rancher on Proxmox - AI Coding Agent Instructions
+# Copilot Instructions for Rancher Deploy Project
 
 ## Project Overview
 
-This is an Infrastructure-as-Code project that provisions a **two-cluster Rancher architecture on Proxmox** using Terraform:
-- **rancher-manager**: 3-node management cluster (4 CPU, 8GB RAM, 100GB disk each) on `192.168.1.0/24`
-- **nprd-apps**: 3-node worker cluster (8 CPU, 16GB RAM, 150GB disk each) on `192.168.2.0/24`
+This project deploys a complete Rancher management cluster and non-production apps cluster on Proxmox using Terraform. It demonstrates infrastructure-as-code best practices with automated VM provisioning, networking, and cluster orchestration.
 
-The manager cluster runs Rancher Server and cert-manager; the nprd-apps cluster registers to the manager. Both use RKE2 Kubernetes.
+- **Rancher Manager Cluster**: 3 nodes (VM 401-403), runs Rancher control plane
+- **NPRD Apps Cluster**: 3 nodes (VM 404-406), non-production workloads
+- **Network**: Unified VLAN 14 (192.168.14.0/24) for simplified management
+- **Provider**: dataknife/pve v1.0.0 (improved reliability and performance)
 
-## Architecture & Data Flows
+## Project Structure
 
-### Multi-Environment Pattern
-- **Root module** (`terraform/main.tf`): Defines generic infrastructure using reusable modules
-- **Environment-specific configs** (`terraform/environments/{manager,nprd-apps}/main.tf`): Call root module with environment variables
-- **Key insight**: Each environment has its own `terraform.tfvars`, `backend.tf` (state isolation), and module calls with different variable values
-- **Impact**: Changes to `terraform/main.tf` affect both environments; environment-specific tweaks go in `terraform/environments/*/main.tf`
+### Documentation (`docs/`)
+Core documentation for users and developers:
+- `GETTING_STARTED.md` - Quick start guide for new users
+- `TERRAFORM_GUIDE.md` - Detailed deployment and configuration
+- `ARCHITECTURE.md` - System design, network topology, and components
+- `TROUBLESHOOTING.md` - Common issues and solutions
+- `TEMPLATE_CREATION.md` - VM template setup for Proxmox
+- `TERRAFORM_IMPROVEMENTS.md` - Provider migration (telmate → dataknife/pve)
 
-### VM Provisioning Flow
-1. `proxmox_vm` module clones Ubuntu 22.04 Cloud-Init template (ID specified in vars)
-2. Sets static IPs via Cloud-Init (192.168.1.x for manager, 192.168.2.x for apps)
-3. Provisioners run post-deployment: SSH-based setup scripts (see `scripts/install-rke2.sh`)
-4. **Convention**: VM IDs follow pattern: manager=100+, nprd-apps=200+; managed via `for_each` in `terraform/main.tf` line 5-8
+### Terraform Configuration (`terraform/`)
+Infrastructure-as-code using Terraform:
+- `main.tf` - Cluster module definitions and orchestration
+- `provider.tf` - Proxmox provider configuration
+- `variables.tf` - Input variable definitions and defaults
+- `outputs.tf` - Output values for cluster access
+- `terraform.tfvars.example` - Example variable values (copy and customize)
+- `modules/proxmox_vm/` - Reusable VM resource module
 
-### Kubernetes Cluster Initialization
-1. First node becomes RKE2 server: `curl -sfL https://get.rke2.io | sh -` then `systemctl start rke2-server`
-2. Subsequent nodes join as agents using token from server (see `QUICKSTART.md` for manual steps)
-3. `configure-kubeconfig.sh` retrieves kubeconfig from each cluster and stores in `~/.kube/`
-4. **Critical**: Manager cluster kubeconfig at `192.168.1.100:/etc/rancher/rke2/rke2.yaml`; sed-patched to replace `127.0.0.1` with actual IP
+### Scripts (`scripts/`)
+Utility and setup scripts:
+- `setup.sh` - Initial environment setup
+- `SETUP_COMPLETE.sh` - Post-deployment validation
 
-## Developer Workflows
+### Root Documentation
+- `README.md` - Project overview with quick-start
+- `.github/copilot-instructions.md` - This file
 
-### Deployment Sequence
-```bash
-make check-prereqs           # Verify terraform, kubectl, helm installed
-cp terraform.tfvars.example terraform.tfvars  # Both environments
-# Edit with Proxmox credentials, template ID, domain
-make plan-manager            # terraform init + plan (use tfplan artifact)
-make apply-manager           # apply tfplan (NOT interactive apply)
-# Wait 10-15 min for VMs; SSH to nodes and run: curl -sfL https://get.rke2.io | sh -
-make plan-nprd && make apply-nprd  # Repeat for nprd-apps
-./scripts/configure-kubeconfig.sh  # Retrieve kubeconfigs
-```
+## Key Guidelines
 
-### Daily Commands
-- **Validate**: `make validate` (runs `terraform validate` on both envs)
-- **Format**: `make fmt` (applies `terraform fmt -recursive`)
-- **Destroy**: `make destroy-manager` and `make destroy-nprd` (separate targets)
-- **Cleanup**: `make clean` (removes .terraform, .terraform.lock.hcl, tfplan artifacts)
+### Terraform Development
 
-### Makefile Implementation Pattern
-- Variables at top: `MANAGER_ENV` and `NPRD_ENV` paths
-- Cluster-specific targets prefix with environment: `plan-manager`, `apply-nprd`, `destroy-manager`
-- Utility targets act on both environments (e.g., `fmt`, `validate`, `clean`)
-- Uses `-out=tfplan` artifact to decouple planning and applying (best practice)
+#### Variable Naming and Documentation
+- Use snake_case for variable names
+- Always include `description` field explaining purpose
+- Use `type` to enforce data types (string, number, map, list, etc.)
+- Mark sensitive values with `sensitive = true`
+- Provide realistic defaults where appropriate
 
-## Key Files & Patterns
+**Sensitive Variables:**
+- `proxmox_api_token_secret`
+- `ssh_private_key`
+- Store in `terraform.tfvars` (never commit actual values)
+- Use `terraform.tfvars.example` as template for users
 
-### Configuration Files
-- `terraform/provider.tf`: Proxmox + Helm + Kubernetes providers (all three required)
-- `terraform/variables.tf`: Global variables (proxmox_api_url, ssh_private_key, etc.)
-- `terraform/environments/manager/variables.tf`: Environment-specific overrides (rancher_version, rancher_hostname)
-- `terraform/modules/proxmox_vm/main.tf`: Reusable VM provisioning (handles Cloud-Init, networking, cloning)
+#### Module Architecture
+- **Single module pattern**: `proxmox_vm` module handles all VM creation
+- **Cluster orchestration**: Pass cluster configuration via variables, not hard-coded values
+- **Module reusability**: Both manager and apps clusters use same module with different parameters
+- **Explicit dependencies**: Use `depends_on` to control deployment order (apps waits for manager)
 
-### Convention: Sensitive Variables
-Mark with `sensitive = true` in variable declarations: `proxmox_token_secret`, `ssh_private_key`, `rancher_password`
-- These are stored in `terraform.tfvars` (NOT version-controlled; use `.example` templates)
-- Never log or output them in plan output
+#### Resource Naming
+- **Provider resources**: `pve_qemu` (from dataknife/pve provider)
+- **Terraform variables**: snake_case (e.g., `proxmox_api_url`)
+- **Terraform outputs**: snake_case (e.g., `rancher_manager_ip`)
+- **Local values**: snake_case (e.g., `vm_tags`)
 
-### Convention: Cluster Configuration Map
-In `main.tf`, clusters defined as nested map with keys `manager` and `nprd-apps`:
-```hcl
-clusters = {
-  manager = { node_count = 3, cpu_cores = 4, ip_subnet = "192.168.1.0/24", ... }
-  nprd-apps = { node_count = 3, cpu_cores = 8, ip_subnet = "192.168.2.0/24", ... }
-}
-```
-This is NOT stored as separate resource blocks—it's a map passed to modules for dynamic `for_each` loops.
+#### Network Configuration
+- **VLAN**: 14 (unified segment)
+- **Manager nodes**: 192.168.14.10x (100-102)
+- **Apps nodes**: 192.168.14.11x (110-112)
+- **Gateway**: 192.168.14.1
+- **Cloud-init**: Handles static IP, DNS, hostname configuration
 
-### Module Usage Pattern
-Both clusters use identical `proxmox_vm` module but with different specs:
+#### Cluster Orchestration Pattern
 ```hcl
 module "rancher_manager" {
-  for_each = { for i in range(var.clusters["manager"].node_count) : "manager-${i+1}" => {...} }
-  source = "../modules/proxmox_vm"
-  # ... pass cluster["manager"] values
+  source = "./modules/proxmox_vm"
+  # ... configuration for 3-node manager cluster
 }
+
 module "nprd_apps" {
-  for_each = { for i in range(var.clusters["nprd-apps"].node_count) : "nprd-apps-${i+1}" => {...} }
-  # ... pass cluster["nprd-apps"] values
+  source = "./modules/proxmox_vm"
+  depends_on = [module.rancher_manager]  # Manager first
+  # ... configuration for 3-node apps cluster
 }
 ```
-Change cluster size/resources by editing `terraform/main.tf` cluster map, NOT individual module calls.
 
-## Integration Points & External Dependencies
+### Documentation Standards
 
-### Proxmox Integration (telmate/proxmox provider)
-- **Authentication**: API token (ID + secret) via `pm_api_url`, not username/password
-- **Cloning**: Requires pre-existing template VM (e.g., Ubuntu 22.04 with Cloud-Init, ID in `vm_template_id`)
-- **Networking**: Assumes vmbr0 bridge exists; VMs get static IPs via Cloud-Init, not DHCP
+#### README.md Structure
+1. Project title and purpose
+2. Features list
+3. Architecture overview (brief)
+4. Prerequisites section
+5. Quick start (3-5 steps)
+6. Documentation links (point to docs/ folder)
+7. Project structure overview
+8. Key features explanation
+9. Usage and configuration
+10. Troubleshooting basics with link to detailed guide
+11. Support and resources
+
+#### Guide Documents (in `docs/`)
+Follow consistent structure:
+1. **Title**: Clear indication of guide purpose
+2. **Overview**: What will be accomplished
+3. **Prerequisites**: Required tools, accounts, knowledge
+4. **Step-by-step instructions**: Numbered, clear, testable
+5. **Configuration examples**: Real code with explanations
+6. **Verification**: How to confirm success
+7. **Troubleshooting**: Issues specific to this guide
+8. **Next steps**: Related guides or post-deployment tasks
+9. **Related documentation**: Cross-references to other docs
+
+#### Troubleshooting Guide Format
+Organize by category (Terraform, Proxmox API, VMs, Networking, SSH, etc.):
+```markdown
+## Category Name
+
+### Issue: [User-facing symptom]
+**Error message**: [Actual error text if applicable]
+**Solutions**:
+1. [First approach with commands]
+2. [Alternative approach]
+3. [Debug/diagnostic approach]
+```
+
+#### Architecture Documentation
+Include:
+- System diagram/ASCII art
+- Component descriptions
+- Network topology
+- Data flows
+- Resource requirements
+- Scalability considerations
+- Disaster recovery approach
+
+### Provider Information
+
+#### Current: dataknife/pve v1.0.0
+**Advantages over telmate/proxmox:**
+- ✅ Reliable task polling with exponential backoff retry
+- ✅ Better error handling and diagnostics
+- ✅ Proper cloud-init integration
+- ✅ Configurable debug logging (PROXMOX_LOG_LEVEL)
+- ✅ Full Proxmox VE 9.x support
+- ✅ Improved API stability
+
+**Resource Type**: `pve_qemu` for QEMU VMs
+
+**Provider Configuration:**
+```hcl
+provider "pve" {
+  endpoint         = var.proxmox_api_url
+  api_user         = var.proxmox_api_user
+  api_token_id     = var.proxmox_api_token_id
+  api_token_secret = var.proxmox_api_token_secret
+  insecure         = var.proxmox_tls_insecure
+}
+```
+
+#### Previous: telmate/proxmox (~2.9)
+- Deprecated and no longer maintained
+- Migration completed in commit 2d68033
+- Issues with task polling and error handling
+- Limited Proxmox VE 9.x support
+
+### Best Practices
+
+#### Infrastructure as Code Principles
+1. **Idempotency**: Apply multiple times with same result
+2. **State isolation**: Separate tfvars for different environments
+3. **Modularity**: Reuse modules, avoid code duplication
+4. **Documentation**: Every variable must be documented
+5. **Version control**: Git for all code and examples
+
+#### Cluster Deployment
+1. **Sequence**: Manager cluster always first
+2. **Dependencies**: Use `depends_on` for explicit ordering
+3. **Configuration**: Cloud-init handles all post-boot setup
+4. **Verification**: SSH access verifies successful deployment
+5. **Timing**: Allow 2-3 minutes total for all 6 VMs
+
+#### Network Configuration
+- **VLAN tagging**: Applied at vmbr0 level in Proxmox
+- **Static IPs**: Configured via cloud-init, not DHCP
+- **Connectivity**: Test with ping before proceeding
+- **DNS**: Configured per cluster, can be customized
+- **Unified segment**: All VMs on same VLAN for simplicity
+
+#### Debugging Techniques
+```bash
+# Terraform debugging
+export TF_LOG=debug
+terraform plan > debug.log 2>&1
+
+# Provider debugging
+export PROXMOX_LOG_LEVEL=debug
+terraform apply
+
+# Check Proxmox tasks
+# Via UI: Datacenter → Tasks → View logs
+
+# Monitor VM console
+# Via UI: VMs → Select VM → Console → Monitor cloud-init
+
+# Verify in VM
+ssh ubuntu@192.168.14.100
+cloud-init status
+cloud-init query
+ip addr show
+```
+
+### Code Quality Standards
+
+#### Terraform Formatting
+```bash
+# Format all Terraform files
+terraform fmt -recursive
+
+# Validate configuration
+terraform validate
+
+# Check for unused variables
+terraform console  # Then: keys(var.*)
+```
+
+#### Documentation Quality
+- Clear, concise language (avoid jargon where possible)
+- Code examples for all configuration options
+- Cross-references between related topics
+- Troubleshooting sections in major guides
+- Consistent formatting and styling
+
+#### Error Handling
+- Meaningful error messages
+- Provide solutions, not just problems
+- Include command examples for debugging
+- Link to relevant troubleshooting sections
+
+## Common Development Tasks
+
+### Adding a New Documentation File
+
+1. **Create file in `docs/`**: Use descriptive name (e.g., `DEPLOYMENT_GUIDE.md`)
+2. **Structure content**:
+   - Header with clear title
+   - Overview paragraph
+   - Prerequisites section
+   - Main content with examples
+   - Troubleshooting for that topic
+   - Links to related docs
+3. **Cross-reference**:
+   - Add link to README.md documentation section
+   - Link from related documents
+   - Include in .github/copilot-instructions.md
+
+### Updating Terraform Configuration
+
+1. **Format code**: `terraform fmt -recursive`
+2. **Validate**: `terraform validate`
+3. **Review**: Check variable descriptions are clear
+4. **Test plan**: `terraform plan > plan.txt` (review changes)
+5. **Manual test** (if applicable):
+   - Plan on test environment
+   - Apply changes
+   - Verify VMs are created and configured
+   - Destroy to clean up
+6. **Commit**: Clear message describing changes
+
+### Handling Issues and Troubleshooting
+
+1. **Reproduce**: Run with debug logging enabled
+2. **Gather info**:
+   - Terraform state: `terraform state list`
+   - Proxmox task history
+   - VM console output
+   - Cloud-init logs in VM
+3. **Document solution**: Add to TROUBLESHOOTING.md if applicable
+4. **Test fix**: Verify in test environment
+5. **Commit**: Reference issue if applicable
+
+### Upgrading Provider Version
+
+1. **Test in isolated environment**
+2. **Update `provider.tf`**: Modify version constraint
+3. **Update documentation**: Note breaking changes
+4. **Test full deployment**: `terraform init → plan → apply`
+5. **Document changes**: Add to TERRAFORM_IMPROVEMENTS.md
+6. **Commit**: Clear migration notes in commit message
+
+## Testing Recommendations
+
+### Before Pushing Changes
+
+1. **Syntax and formatting**:
+   ```bash
+   terraform fmt -recursive
+   terraform validate
+   ```
+
+2. **Documentation review**:
+   - Check all examples are correct
+   - Verify cross-references work
+   - Test commands shown in docs
+
+3. **Code review**:
+   - Variables are documented
+   - No hardcoded values
+   - Proper error handling
+
+4. **Manual testing** (in test environment):
+   ```bash
+   terraform init
+   terraform plan -out=tfplan
+   terraform apply tfplan
+   # Verify outputs and VM access
+   terraform destroy
+   ```
+
+### Full Integration Test Procedure
+
+```bash
+# 1. Clean state
+cd /path/to/rancher-deploy/terraform
+rm -rf .terraform .terraform.lock.hcl
+rm -f tfplan
+
+# 2. Fresh init and plan
+terraform init
+terraform plan -out=tfplan
+# Review plan carefully
+
+# 3. Apply and verify
+terraform apply tfplan
+terraform output
+# Check IPs and test SSH access
+
+# 4. Cleanup
+terraform destroy
+```
+
+## Quick Reference
+
+### Essential Files
+| File | Purpose |
+|------|---------|
+| `README.md` | Project overview and quick-start |
+| `terraform/main.tf` | Cluster definitions |
+| `terraform/provider.tf` | Provider configuration |
+| `docs/GETTING_STARTED.md` | User setup guide |
+| `docs/TERRAFORM_GUIDE.md` | Detailed deployment |
+| `docs/TROUBLESHOOTING.md` | Issue resolution |
+
+### Important Commands
+```bash
+# Terraform core
+terraform init              # Initialize Terraform
+terraform validate          # Validate configuration
+terraform fmt -recursive    # Format code
+terraform plan             # Preview changes
+terraform apply            # Apply changes
+terraform destroy          # Remove infrastructure
+
+# Debugging
+export TF_LOG=debug        # Enable Terraform debug
+export PROXMOX_LOG_LEVEL=debug  # Enable provider debug
+
+# State inspection
+terraform state list       # List resources
+terraform state show <resource>  # Show resource details
+```
+
+### Useful Variables
+- `proxmox_api_url`: Proxmox API endpoint
+- `proxmox_api_user`: API user (e.g., terraform@pam)
+- `proxmox_api_token_id`: Token ID from API token
+- `proxmox_api_token_secret`: Token secret (sensitive)
+- `vm_template_id`: Ubuntu template VM ID (default: 400)
+- `ssh_private_key`: Path to SSH key for VM access
+
+## Documentation Maps
+
+### For Users
+1. Start: [README.md](../README.md)
+2. Setup: [GETTING_STARTED.md](../docs/GETTING_STARTED.md)
+3. Deploy: [TERRAFORM_GUIDE.md](../docs/TERRAFORM_GUIDE.md)
+4. Understand: [ARCHITECTURE.md](../docs/ARCHITECTURE.md)
+5. Troubleshoot: [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
+
+### For Developers
+1. Review: [ARCHITECTURE.md](../docs/ARCHITECTURE.md)
+2. Setup: [GETTING_STARTED.md](../docs/GETTING_STARTED.md)
+3. Modify: [TERRAFORM_GUIDE.md](../docs/TERRAFORM_GUIDE.md)
+4. Debug: [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
+5. Reference: This file (.github/copilot-instructions.md)
+
+## Support and Resources
+
+### External Documentation
+- **Proxmox**: https://pve.proxmox.com/wiki/Main_Page
+- **Terraform**: https://www.terraform.io/docs/
+- **Rancher**: https://rancher.com/docs/
+- **Provider**: https://github.com/surrealwolf/terraform-pve
+
+### Internal Documentation
+- Project README: [../README.md](../README.md)
+- Getting Started: [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md)
+- All guides: [../docs/](../docs/)
 - **Gotchas**: TLS validation can be disabled via `proxmox_tls_insecure` (for lab/dev only)
 
 ### RKE2 Kubernetes
