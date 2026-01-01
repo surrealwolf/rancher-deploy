@@ -1,77 +1,60 @@
 terraform {
   required_version = ">= 1.0"
   required_providers {
-    proxmox = {
-      source  = "telmate/proxmox"
-      version = "~> 2.9"
+    pve = {
+      source  = "dataknife/pve"
+      version = "1.0.0"
     }
   }
 }
 
-provider "proxmox" {
-  pm_api_url      = var.proxmox_api_url
-  pm_api_token_id = var.proxmox_token_id
-  pm_api_token_secret = var.proxmox_token_secret
-  pm_tls_insecure = var.proxmox_tls_insecure
+provider "pve" {
+  endpoint         = var.proxmox_api_url
+  api_user         = var.proxmox_api_user
+  api_token_id     = var.proxmox_token_id
+  api_token_secret = var.proxmox_token_secret
+  insecure         = var.proxmox_tls_insecure
 }
 
-module "rancher_infrastructure" {
-  source = "../../"
-
-  # Proxmox Configuration
-  proxmox_api_url     = var.proxmox_api_url
-  proxmox_token_id    = var.proxmox_token_id
-  proxmox_token_secret = var.proxmox_token_secret
-  proxmox_tls_insecure = var.proxmox_tls_insecure
-  proxmox_node        = var.proxmox_node
-  vm_template_id      = var.vm_template_id
-  ssh_private_key     = var.ssh_private_key
-
-  # Cluster Configuration
-  clusters = {
-    manager = {
-      name         = "rancher-manager"
-      node_count   = 3
-      cpu_cores    = 4
-      memory_mb    = 8192
-      disk_size_gb = 100
-      domain       = var.domain
-      ip_subnet    = "192.168.1.0/24"
-      gateway      = "192.168.1.1"
-      dns_servers  = var.dns_servers
-      storage      = var.storage
-    }
-    nprd-apps = {
-      name         = "nprd-apps"
-      node_count   = 3
-      cpu_cores    = 8
-      memory_mb    = 16384
-      disk_size_gb = 150
-      domain       = var.domain
-      ip_subnet    = "192.168.2.0/24"
-      gateway      = "192.168.1.1"
-      dns_servers  = var.dns_servers
-      storage      = var.storage
+# Deploy the rancher manager cluster
+resource "pve_qemu" "manager_nodes" {
+  for_each = {
+    for i in range(var.node_count) :
+    "rancher-manager-${i + 1}" => {
+      vm_id       = var.vm_id_base + i
+      hostname    = "rancher-manager-${i + 1}"
+      ip_octet    = 10 + i
     }
   }
 
-  # Rancher Configuration
-  rancher_version  = var.rancher_version
-  rancher_password = var.rancher_password
-  rancher_hostname = var.rancher_hostname
+  name     = each.value.hostname
+  vmid     = each.value.vm_id
+  node     = var.proxmox_node
+  clone    = var.vm_template_id
+
+  cores   = var.cpu_cores
+  sockets = 1
+  memory  = var.memory_mb
+
+  scsi0     = "${var.storage}:${var.disk_size_gb}"
+  net0      = "virtio,bridge=vmbr0"
+  ciuser    = "ubuntu"
+  ipconfig0 = "ip=192.168.14.${each.value.ip_octet}/24,gw=${var.gateway}"
+  nameserver = join(" ", var.dns_servers)
 }
 
 output "cluster_ips" {
-  description = "Cluster node IP addresses"
-  value       = module.rancher_infrastructure.cluster_ips
+  description = "Manager cluster node IP addresses"
+  value = {
+    for name, vm in pve_qemu.manager_nodes :
+    name => regex("^ip=([0-9.]+)", vm.ipconfig0)[0]
+  }
 }
 
-output "kubeconfig_paths" {
-  description = "Kubeconfig file paths"
-  value       = module.rancher_infrastructure.kubeconfig_path
-}
-
-output "rancher_url" {
-  description = "Rancher manager URL"
-  value       = "https://${var.rancher_hostname}"
+output "node_hostnames" {
+  description = "Manager node hostnames"
+  value = [
+    for vm in pve_qemu.manager_nodes :
+    vm.name
+  ]
 }

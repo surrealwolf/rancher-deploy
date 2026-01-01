@@ -3,6 +3,12 @@ variable "proxmox_api_url" {
   type        = string
 }
 
+variable "proxmox_api_user" {
+  description = "Proxmox API user"
+  type        = string
+  default     = "root@pam"
+}
+
 variable "proxmox_token_id" {
   description = "Proxmox API token ID"
   type        = string
@@ -31,16 +37,46 @@ variable "vm_template_id" {
   type        = number
 }
 
+variable "vm_id_base" {
+  description = "Base VM ID for cluster nodes (IDs will be base, base+1, base+2, etc)"
+  type        = number
+  default     = 401
+}
+
 variable "ssh_private_key" {
   description = "Path to SSH private key"
   type        = string
   sensitive   = true
 }
 
-variable "domain" {
-  description = "Domain name"
+variable "node_count" {
+  description = "Number of nodes in manager cluster"
+  type        = number
+  default     = 3
+}
+
+variable "cpu_cores" {
+  description = "CPU cores per node"
+  type        = number
+  default     = 4
+}
+
+variable "memory_mb" {
+  description = "Memory per node in MB"
+  type        = number
+  default     = 8192
+}
+
+variable "disk_size_gb" {
+  description = "Disk size per node in GB"
+  type        = number
+  default     = 100
+}
+
+variable "gateway" {
+  description = "Network gateway"
   type        = string
-  default     = "lab.local"
+  default     = "192.168.14.1"
 }
 
 variable "dns_servers" {
@@ -52,22 +88,5 @@ variable "dns_servers" {
 variable "storage" {
   description = "Storage target"
   type        = string
-  default     = "local-lvm"
-}
-
-variable "rancher_version" {
-  description = "Rancher version"
-  type        = string
-  default     = "v2.7.7"
-}
-
-variable "rancher_password" {
-  description = "Rancher bootstrap password"
-  type        = string
-  sensitive   = true
-}
-
-variable "rancher_hostname" {
-  description = "Rancher hostname"
-  type        = string
+  default     = "local-vm-zfs"
 }

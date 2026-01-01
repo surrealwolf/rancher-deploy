@@ -3,6 +3,12 @@ variable "proxmox_api_url" {
   type        = string
 }
 
+variable "proxmox_api_user" {
+  description = "Proxmox API user"
+  type        = string
+  default     = "root@pam"
+}
+
 variable "proxmox_token_id" {
   description = "Proxmox API token ID"
   type        = string
@@ -29,6 +35,12 @@ variable "proxmox_node" {
 variable "vm_template_id" {
   description = "VM template ID"
   type        = number
+}
+
+variable "vm_id_base" {
+  description = "Base VM ID for cluster nodes (IDs will be base, base+1, base+2, etc)"
+  type        = number
+  default     = 100
 }
 
 variable "ssh_private_key" {
