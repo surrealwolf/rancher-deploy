@@ -1,23 +1,27 @@
 # Rancher Cluster on Proxmox
 
-Deploy a complete Rancher management cluster and non-production apps cluster on Proxmox using Terraform with Ubuntu 24.04 cloud images.
+Deploy a complete Rancher management cluster and non-production apps cluster on Proxmox using Terraform with Ubuntu 24.04 cloud images, RKE2 Kubernetes, and automated Rancher installation.
 
 ## Features
 
+- ✅ **Full Automation**: From VMs to Rancher in a single `terraform apply`
 - ✅ **Cloud Image Provisioning**: Ubuntu 24.04 LTS cloud images with automatic downloads
 - ✅ **Modern Provider**: bpg/proxmox v0.90 (1.7K+ GitHub stars, 130+ contributors)
-- ✅ **Unified Network**: All 6 VMs on VLAN 14 (192.168.1.0/24)
-- ✅ **High Availability**: 3-node manager + 3-node apps clusters
+- ✅ **RKE2 Kubernetes**: Automated RKE2 installation and cluster bootstrapping
+- ✅ **Rancher Deployment**: Helm-based Rancher installation with cert-manager
+- ✅ **High Availability**: 3-node manager + 3-node apps clusters with HA Rancher
 - ✅ **Cloud-Init Integration**: Automated networking, DNS, hostnames
 - ✅ **Comprehensive Docs**: Setup guides, variable management, troubleshooting
 - ✅ **Secure Configuration**: API token auth, gitignore patterns, tfvars templates
 
 ## What's Deployed
 
-- **Rancher Manager**: 3 VMs (401-403) - Rancher control plane + local cluster
-- **Apps Cluster**: 3 VMs (404-406) - Non-production workloads
+- **Rancher Manager**: 3 VMs (401-403) with RKE2 + Rancher control plane
+- **Apps Cluster**: 3 VMs (404-406) with RKE2 for non-production workloads
 - **Storage**: Dedicated volumes for cloud images + VM storage (local-vm-zfs)
-- **Network**: VLAN 14, static IPs, DNS configured via cloud-init
+- **Network**: Static IPs, DNS configured via cloud-init
+- **Kubernetes**: RKE2 clusters automatically bootstrapped and configured
+- **Rancher**: Helm-deployed with cert-manager, Ingress, and bootstrap password
 
 ## Prerequisites
 
@@ -48,31 +52,36 @@ rancher_password = "your-secure-password"
 
 See [docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md) for all options.
 
-### 2. Deploy Infrastructure
+### 2. Deploy Infrastructure + Kubernetes + Rancher
 
 ```bash
 # Verify configuration
 terraform init
 terraform plan
 
-# Deploy (takes 15-20 minutes including cloud image download)
+# Deploy (takes 30-45 minutes including RKE2 installation and Rancher setup)
 terraform apply
 ```
 
 ### 3. Verify Deployment
 
 ```bash
-# Get cluster IPs
-terraform output rancher_manager_ip
-terraform output nprd_apps_cluster_ips
+# Check manager Kubernetes cluster
+export KUBECONFIG=~/.kube/rancher-manager.yaml
+kubectl get nodes
+kubectl get pods -n cattle-system
 
-# Test SSH access
-ssh ubuntu@192.168.1.101
+# Access Rancher
+terraform output rancher_url
+# Open in browser, login with:
+# Username: admin
+# Password: <from rancher_password in tfvars>
 ```
 
 ## Documentation
 
 - **[TERRAFORM_SETUP.md](TERRAFORM_SETUP.md)** - Complete Terraform configuration guide
+- **[docs/RANCHER_DEPLOYMENT.md](docs/RANCHER_DEPLOYMENT.md)** - Rancher deployment automation
 - **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning details
 - **[docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md)** - Variable reference
 - **[docs/TFVARS_SETUP.md](docs/TFVARS_SETUP.md)** - Setup instructions

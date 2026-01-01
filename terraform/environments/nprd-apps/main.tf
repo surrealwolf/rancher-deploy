@@ -22,27 +22,27 @@ resource "pve_qemu" "nprd_apps_nodes" {
   for_each = {
     for i in range(var.node_count) :
     "nprd-apps-${i + 1}" => {
-      vm_id       = var.vm_id_base + i
-      hostname    = "nprd-apps-${i + 1}"
-      ip_octet    = var.ip_start_octet + i
+      vm_id    = var.vm_id_base + i
+      hostname = "nprd-apps-${i + 1}"
+      ip_octet = var.ip_start_octet + i
     }
   }
 
-  name     = each.value.hostname
-  vmid     = each.value.vm_id
-  node     = var.proxmox_node
-  clone    = var.vm_template_id
+  name  = each.value.hostname
+  vmid  = each.value.vm_id
+  node  = var.proxmox_node
+  clone = var.vm_template_id
 
   cores   = var.cpu_cores
   sockets = 1
   memory  = var.memory_mb
 
-  scsi0     = "${var.storage}:${var.disk_size_gb}"
-  net0      = "virtio,bridge=vmbr0"
-  ciuser    = "ubuntu"
-  ipconfig0 = "ip=${var.ip_subnet}.${each.value.ip_octet}/24,gw=${var.gateway}"
+  scsi0      = "${var.storage}:${var.disk_size_gb}"
+  net0       = "virtio,bridge=vmbr0"
+  ciuser     = "ubuntu"
+  ipconfig0  = "ip=${var.ip_subnet}.${each.value.ip_octet}/24,gw=${var.gateway}"
   nameserver = join(" ", var.dns_servers)
-  startup   = true
+  startup    = true
 }
 
 output "cluster_ips" {

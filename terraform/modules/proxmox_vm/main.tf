@@ -95,20 +95,20 @@ output "hostname" {
 # The image is then imported into the VM datastore via the disk block's import_from parameter
 resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
   content_type        = "import"
-  datastore_id        = "images-import"  # File-based storage configured for cloud image imports
+  datastore_id        = "images-import" # File-based storage configured for cloud image imports
   node_name           = var.proxmox_node
   url                 = var.cloud_image_url
-  file_name           = "ubuntu-noble-cloudimg-amd64.qcow2"  # Same filename for all VMs (shared image)
+  file_name           = "ubuntu-noble-cloudimg-amd64.qcow2" # Same filename for all VMs (shared image)
   overwrite           = true
   overwrite_unmanaged = true
 }
 
 # Create VM from cloud image
 resource "proxmox_virtual_environment_vm" "vm" {
-  vm_id             = var.vm_id
-  name              = var.vm_name
-  node_name         = var.proxmox_node
-  stop_on_destroy   = true
+  vm_id           = var.vm_id
+  name            = var.vm_name
+  node_name       = var.proxmox_node
+  stop_on_destroy = true
 
   cpu {
     cores   = var.cpu_cores

@@ -94,12 +94,12 @@ resource "kubernetes_namespace" "rancher" {
 
 # Install Rancher (only on manager cluster)
 resource "helm_release" "rancher" {
-  count            = var.install_rancher ? 1 : 0
-  name             = "rancher"
-  repository       = "https://releases.rancher.com/server-charts/stable"
-  chart            = "rancher"
-  namespace        = kubernetes_namespace.rancher.metadata[0].name
-  version          = var.rancher_version
+  count      = var.install_rancher ? 1 : 0
+  name       = "rancher"
+  repository = "https://releases.rancher.com/server-charts/stable"
+  chart      = "rancher"
+  namespace  = kubernetes_namespace.rancher.metadata[0].name
+  version    = var.rancher_version
 
   set {
     name  = "hostname"
