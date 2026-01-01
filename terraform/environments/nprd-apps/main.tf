@@ -42,6 +42,7 @@ resource "pve_qemu" "nprd_apps_nodes" {
   ciuser    = "ubuntu"
   ipconfig0 = "ip=192.168.14.${each.value.ip_octet}/24,gw=${var.gateway}"
   nameserver = join(" ", var.dns_servers)
+  startup   = true
 }
 
 output "cluster_ips" {
