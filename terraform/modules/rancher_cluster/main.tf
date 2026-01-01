@@ -120,8 +120,9 @@ resource "helm_release" "rancher" {
   depends_on = [helm_release.cert_manager]
 }
 
-# Create monitoring namespace for agent deployments
+# Create monitoring namespace for agent deployments (only if deploying Rancher)
 resource "kubernetes_namespace" "monitoring" {
+  count = var.install_rancher ? 1 : 0
   metadata {
     name = "cattle-monitoring-system"
   }

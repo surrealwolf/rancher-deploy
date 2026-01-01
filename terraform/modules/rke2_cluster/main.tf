@@ -26,7 +26,6 @@ variable "agent_ips" {
 variable "ssh_private_key_path" {
   description = "Path to SSH private key"
   type        = string
-  sensitive   = true
 }
 
 variable "ssh_user" {

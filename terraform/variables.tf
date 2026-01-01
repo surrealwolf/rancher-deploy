@@ -80,5 +80,4 @@ variable "deploy_rancher" {
 variable "ssh_private_key" {
   description = "Path to SSH private key for VM access"
   type        = string
-  sensitive   = true
 }
