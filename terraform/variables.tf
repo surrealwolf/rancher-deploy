@@ -47,9 +47,10 @@ variable "clusters" {
   }))
 }
 
-variable "vm_template_id" {
-  description = "Proxmox VM template ID to clone from"
-  type        = number
+variable "ubuntu_cloud_image_url" {
+  description = "Ubuntu cloud image URL (24.04 noble)"
+  type        = string
+  default     = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
 }
 
 variable "rancher_version" {

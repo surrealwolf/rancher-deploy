@@ -217,7 +217,7 @@ Error: VM already exists
 4. **Test gateway reachability:**
    ```bash
    # In VM:
-   ping 192.168.14.1
+   ping 192.168.1.1
    ```
 
 ### Issue: VMs on different clusters can't communicate
@@ -268,7 +268,7 @@ Permission denied (publickey).
 
 5. **Try with verbose output:**
    ```bash
-   ssh -v -i ~/.ssh/id_rsa ubuntu@192.168.14.100
+   ssh -v -i ~/.ssh/id_rsa ubuntu@192.168.1.100
    ```
 
 ### Issue: Timeout connecting to SSH
@@ -286,7 +286,7 @@ Connection refused or timeout
 
 2. **Verify network connectivity:**
    ```bash
-   ping 192.168.14.100  # From Proxmox host
+   ping 192.168.1.100  # From Proxmox host
    ```
 
 3. **Check SSH service:**

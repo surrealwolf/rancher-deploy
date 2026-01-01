@@ -10,15 +10,15 @@ module "rancher_manager" {
     }
   }
 
-  vm_name      = each.value.hostname
-  vm_id        = each.value.vm_id
-  template_id  = var.vm_template_id
-  proxmox_node = var.proxmox_node
+  vm_name         = each.value.hostname
+  vm_id           = each.value.vm_id
+  proxmox_node    = var.proxmox_node
+  cloud_image_url = var.ubuntu_cloud_image_url
+  datastore_id    = var.clusters["manager"].storage
   
   cpu_cores    = var.clusters["manager"].cpu_cores
   memory_mb    = var.clusters["manager"].memory_mb
   disk_size_gb = var.clusters["manager"].disk_size_gb
-  storage      = var.clusters["manager"].storage
   
   hostname     = each.value.hostname
   ip_address   = each.value.ip_address
@@ -42,15 +42,15 @@ module "nprd_apps" {
     }
   }
 
-  vm_name      = each.value.hostname
-  vm_id        = each.value.vm_id
-  template_id  = var.vm_template_id
-  proxmox_node = var.proxmox_node
+  vm_name         = each.value.hostname
+  vm_id           = each.value.vm_id
+  proxmox_node    = var.proxmox_node
+  cloud_image_url = var.ubuntu_cloud_image_url
+  datastore_id    = var.clusters["nprd-apps"].storage
   
   cpu_cores    = var.clusters["nprd-apps"].cpu_cores
   memory_mb    = var.clusters["nprd-apps"].memory_mb
   disk_size_gb = var.clusters["nprd-apps"].disk_size_gb
-  storage      = var.clusters["nprd-apps"].storage
   
   hostname     = each.value.hostname
   ip_address   = each.value.ip_address

@@ -9,14 +9,14 @@ The deployment creates two separate Kubernetes clusters on Proxmox:
 ### Rancher Manager Cluster
 - **Purpose**: Runs Rancher management plane
 - **Nodes**: 3 VMs (VM 401-403)
-- **Network**: VLAN 14 (192.168.14.10x)
+- **Network**: VLAN 14 (192.168.1.10x)
 - **Resources**: 4 CPU cores, 8GB RAM each
 - **Storage**: 20GB root disk
 
 ### NPRD Apps Cluster
 - **Purpose**: Non-production application cluster
 - **Nodes**: 3 VMs (VM 404-406)
-- **Network**: VLAN 14 (192.168.14.11x)
+- **Network**: VLAN 14 (192.168.1.11x)
 - **Resources**: 4 CPU cores, 8GB RAM each
 - **Storage**: 20GB root disk
 
@@ -53,12 +53,12 @@ ssh_private_key          = "~/.ssh/id_rsa"
 # Cluster Configuration
 clusters = {
   manager = {
-    gateway    = "192.168.14.1"
+    gateway    = "192.168.1.1"
     dns_servers = ["192.168.1.1", "192.168.1.2"]
     domain     = "example.com"
   }
   nprd-apps = {
-    gateway    = "192.168.14.1"
+    gateway    = "192.168.1.1"
     dns_servers = ["192.168.1.1", "192.168.1.2"]
     domain     = "example.com"
   }
@@ -113,7 +113,7 @@ terraform output rancher_manager_ip
 terraform output nprd_apps_cluster_ips
 
 # Test SSH access
-ssh -i ~/.ssh/id_rsa ubuntu@192.168.14.100
+ssh -i ~/.ssh/id_rsa ubuntu@192.168.1.100
 ```
 
 ## Troubleshooting

@@ -1,52 +1,74 @@
 # Rancher Cluster on Proxmox
 
-Deploy a complete Rancher management cluster and non-production apps cluster on Proxmox using Terraform.
+Deploy a complete Rancher management cluster and non-production apps cluster on Proxmox using Terraform with Ubuntu 24.04 cloud images.
 
 ## Features
 
-- ✅ **Automated VM Provisioning**: Create 6 VMs from template with cloud-init
-- ✅ **Unified Network**: All VMs on VLAN 14 (192.168.14.0/24)
-- ✅ **High Availability**: 3-node manager and 3-node apps clusters
-- ✅ **Reliable Deployment**: Using dataknife/pve provider with retry logic
-- ✅ **Full Documentation**: Architecture, setup, troubleshooting guides
-- ✅ **Infrastructure as Code**: Complete Terraform configuration
+- ✅ **Cloud Image Provisioning**: Ubuntu 24.04 LTS cloud images with automatic downloads
+- ✅ **Modern Provider**: bpg/proxmox v0.90 (1.7K+ GitHub stars, 130+ contributors)
+- ✅ **Unified Network**: All 6 VMs on VLAN 14 (192.168.1.0/24)
+- ✅ **High Availability**: 3-node manager + 3-node apps clusters
+- ✅ **Cloud-Init Integration**: Automated networking, DNS, hostnames
+- ✅ **Comprehensive Docs**: Setup guides, variable management, troubleshooting
+- ✅ **Secure Configuration**: API token auth, gitignore patterns, tfvars templates
 
-## Architecture
+## What's Deployed
 
-- **Rancher Manager Cluster**: 3 nodes (VM 401-403), runs Rancher control plane
-- **NPRD Apps Cluster**: 3 nodes (VM 404-406), non-production workloads
-- **Network**: VLAN 14 (192.168.14.0/24) for unified management
-- **Resources**: 4 CPU cores + 8GB RAM per node
+- **Rancher Manager**: 3 VMs (401-403) - Rancher control plane + local cluster
+- **Apps Cluster**: 3 VMs (404-406) - Non-production workloads
+- **Storage**: Dedicated volumes for cloud images + VM storage (local-vm-zfs)
+- **Network**: VLAN 14, static IPs, DNS configured via cloud-init
 
 ## Prerequisites
 
-- **Proxmox VE 9.x**: With API access
-- **Ubuntu 22.04 LTS VM Template**: VM ID 400 with Cloud-Init
-- **Terraform**: v1.0 or later
-- **SSH Key**: For VM access
+- **Proxmox VE 8.0+**: With API token access
+- **Terraform**: v1.5 or later
+- **SSH Key**: For authentication (optional, password auth supported)
+- **Available Resources**: 24 vCPU cores, 48GB RAM, 600GB disk space
 
 ## Quick Start
 
-1. **Configure Terraform Variables**
-   ```bash
-   cp terraform/terraform.tfvars.example terraform/terraform.tfvars
-   # Edit with your Proxmox API credentials and settings
-   ```
+### 1. Prepare Configuration
 
-2. **Deploy Clusters**
-   ```bash
-   cd terraform
-   terraform init
-   terraform plan
-   terraform apply
-   ```
+```bash
+cd /home/lee/git/rancher-deploy/terraform
+cp terraform.tfvars.example terraform.tfvars
+```
 
-3. **Access Clusters**
-   ```bash
-   # Get IP addresses
-   terraform output rancher_manager_ip
-   terraform output nprd_apps_cluster_ips
-   ```
+Edit `terraform.tfvars` with your values:
+```hcl
+proxmox_api_url = "https://pve.example.com:8006/api2/json"
+proxmox_api_user = "root@pam"
+proxmox_api_token_id = "terraform-token"
+proxmox_api_token_secret = "your-secret-token"
+proxmox_node = "pve"
+rancher_hostname = "rancher.example.com"
+rancher_password = "your-secure-password"
+```
+
+See [docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md) for all options.
+
+### 2. Deploy Infrastructure
+
+```bash
+# Verify configuration
+terraform init
+terraform plan
+
+# Deploy (takes 15-20 minutes including cloud image download)
+terraform apply
+```
+
+### 3. Verify Deployment
+
+```bash
+# Get cluster IPs
+terraform output rancher_manager_ip
+terraform output nprd_apps_cluster_ips
+
+# Test SSH access
+ssh ubuntu@192.168.1.101
+```
 
 ## Documentation
 
@@ -140,10 +162,10 @@ terraform output nprd_apps_cluster_ips
 
 ```bash
 # SSH to a node
-ssh -i ~/.ssh/id_rsa ubuntu@192.168.14.100
+ssh -i ~/.ssh/id_rsa ubuntu@192.168.1.100
 
 # Verify network
-ping 192.168.14.101
+ping 192.168.1.101
 ```
 
 ### Cleanup
@@ -176,12 +198,12 @@ ssh_private_key = "~/.ssh/id_rsa"
 # Cluster settings
 clusters = {
   manager = {
-    gateway     = "192.168.14.1"
+    gateway     = "192.168.1.1"
     dns_servers = ["192.168.1.1", "192.168.1.2"]
     domain      = "example.com"
   }
   nprd-apps = {
-    gateway     = "192.168.14.1"
+    gateway     = "192.168.1.1"
     dns_servers = ["192.168.1.1", "192.168.1.2"]
     domain      = "example.com"
   }

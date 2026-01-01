@@ -48,9 +48,9 @@ rancher-deploy/
 Located at: `terraform/environments/manager/`
 
 Creates 3 Rancher manager VMs:
-- **rancher-manager-1**: VM ID 401, IP 192.168.14.10
-- **rancher-manager-2**: VM ID 402, IP 192.168.14.11
-- **rancher-manager-3**: VM ID 403, IP 192.168.14.12
+- **rancher-manager-1**: VM ID 401, IP 192.168.1.10
+- **rancher-manager-2**: VM ID 402, IP 192.168.1.11
+- **rancher-manager-3**: VM ID 403, IP 192.168.1.12
 
 **Deploy:**
 ```bash
@@ -70,9 +70,9 @@ terraform destroy
 Located at: `terraform/environments/nprd-apps/`
 
 Creates 3 NPRD apps cluster VMs:
-- **nprd-apps-1**: VM ID 404, IP 192.168.14.100
-- **nprd-apps-2**: VM ID 405, IP 192.168.14.101
-- **nprd-apps-3**: VM ID 406, IP 192.168.14.102
+- **nprd-apps-1**: VM ID 404, IP 192.168.1.100
+- **nprd-apps-2**: VM ID 405, IP 192.168.1.101
+- **nprd-apps-3**: VM ID 406, IP 192.168.1.102
 
 **Deploy:**
 ```bash
@@ -130,7 +130,7 @@ Each environment has a `terraform.tfvars` file with:
 - The custom provider properly implements the Delete operation, allowing `terraform destroy` to remove VMs from Proxmox
 - VMs are created by cloning from the template (VM 400)
 - Cloud-init is configured to set up the ubuntu user with specified IP configuration
-- Both clusters use the same network subnet (192.168.14.0/24) with different IP ranges
+- Both clusters use the same network subnet (192.168.1.0/24) with different IP ranges
 
 ## Troubleshooting
 

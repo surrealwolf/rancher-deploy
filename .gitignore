@@ -19,11 +19,17 @@ override.tf.json
 .vscode/
 *.code-workspace
 
-# Environment
+# Environment & Terraform Variables
 .env
 .env.local
 terraform.tfvars
 !terraform.tfvars.example
+# Exclude all production tfvars files (keep examples)
+**/terraform.tfvars.prod
+**/terraform.tfvars.production
+**/environments/**/terraform.tfvars
+!**/environments/**/terraform.tfvars.example
+example.tfvars
 
 # Logs
 *.log

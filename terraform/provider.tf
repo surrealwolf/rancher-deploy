@@ -1,9 +1,9 @@
 terraform {
   required_version = ">= 1.0"
   required_providers {
-    pve = {
-      source  = "dataknife/pve"
-      version = "1.0.0"
+    proxmox = {
+      source  = "bpg/proxmox"
+      version = "~> 0.90"
     }
     helm = {
       source  = "hashicorp/helm"
@@ -16,10 +16,13 @@ terraform {
   }
 }
 
-provider "pve" {
-  endpoint         = var.proxmox_api_url
-  api_user         = var.proxmox_api_user
-  api_token_id     = var.proxmox_api_token_id
-  api_token_secret = var.proxmox_api_token_secret
-  insecure         = var.proxmox_tls_insecure
+provider "proxmox" {
+  endpoint  = var.proxmox_api_url
+  api_token = "${var.proxmox_api_user}!${var.proxmox_api_token_id}=${var.proxmox_api_token_secret}"
+  insecure  = var.proxmox_tls_insecure
+
+  ssh {
+    agent    = true
+    username = "root"
+  }
 }

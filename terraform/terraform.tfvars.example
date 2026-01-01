@@ -1,0 +1,124 @@
+# Rancher Deploy - Terraform Variables Example
+# 
+# INSTRUCTIONS:
+# 1. Copy this file: cp terraform.tfvars.example terraform.tfvars
+# 2. Update values for your environment
+# 3. Never commit terraform.tfvars to git (it's in .gitignore)
+# 4. For team sharing, keep only terraform.tfvars.example in git
+#
+# This configuration creates:
+# - 3 Rancher Manager nodes (VMs 401-403)
+# - 2 Application cluster nodes (VMs 404-405)
+# - All from Ubuntu 24.04 LTS cloud images
+#
+# See CLOUD_IMAGE_SETUP.md for detailed instructions
+
+# ============================================================================
+# PROXMOX CONFIGURATION
+# ============================================================================
+
+proxmox_api_url = "https://192.168.1.10:8006"
+
+# API user format: username@realm (typically root@pam for local auth)
+proxmox_api_user = "root@pam"
+
+# Token ID: Usually format is "tokenname" (not the full user!tokenid format)
+proxmox_api_token_id = "terraform"
+
+# Token secret: The actual token value (keep this secret!)
+proxmox_api_token_secret = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Set to false in production with valid certificates
+proxmox_tls_insecure = true
+
+# Target Proxmox node where VMs will be created
+proxmox_node = "pve"
+
+# ============================================================================
+# UBUNTU CLOUD IMAGE CONFIGURATION (24.04 LTS Noble)
+# ============================================================================
+
+# Ubuntu cloud image URL - change to different release if needed:
+# - 24.04 (Focal): https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img
+# - 22.04 (Jammy): https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+# - 24.04 (Noble): https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+ubuntu_cloud_image_url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+
+# ============================================================================
+# CLUSTER CONFIGURATION
+# ============================================================================
+
+clusters = {
+  manager = {
+    name           = "rancher-manager"
+    node_count     = 3
+    cpu_cores      = 4              # 2-4 minimum for Rancher
+    memory_mb      = 8192           # 4GB minimum, 8GB recommended
+    disk_size_gb   = 50             # Expand as needed for workloads
+    domain         = "example.com"  # DNS domain for VMs
+    ip_subnet      = "192.168.1"   # Base subnet (VMs will be .100, .101, .102)
+    gateway        = "192.168.1.1" # Network gateway
+    dns_servers    = ["8.8.8.8", "8.8.4.4"]
+    storage        = "local-lvm"    # Proxmox storage datastore ID
+  }
+  
+  nprd-apps = {
+    name           = "nprd-apps"
+    node_count     = 2
+    cpu_cores      = 4              # Can be 2-8 depending on workload
+    memory_mb      = 8192           # 4GB minimum
+    disk_size_gb   = 50             # Expand as needed
+    domain         = "example.com"
+    ip_subnet      = "192.168.1"   # Same subnet (VMs will be .110, .111)
+    gateway        = "192.168.1.1"
+    dns_servers    = ["8.8.8.8", "8.8.4.4"]
+    storage        = "local-lvm"
+  }
+}
+
+# ============================================================================
+# RANCHER CONFIGURATION
+# ============================================================================
+
+rancher_version = "v2.7.7"
+
+# Initial admin password (change immediately after first login!)
+rancher_password = "change-me-to-secure-password"
+
+# Rancher manager hostname (should be accessible from application clusters)
+rancher_hostname = "rancher.example.com"
+
+# ============================================================================
+# SSH CONFIGURATION
+# ============================================================================
+
+# Path to SSH private key for VM access
+# The key should match the public key configured in your Proxmox user account
+ssh_private_key = "~/.ssh/id_rsa"
+
+# ============================================================================
+# NOTES FOR PRODUCTION
+# ============================================================================
+
+# 1. Create secure API token:
+#    ssh root@proxmox-node
+#    pveum user token add terraform@pve terraform-prod --privsep=0
+#
+# 2. Use environment variables instead of hardcoding secrets:
+#    export PROXMOX_VE_API_TOKEN="terraform@pve!terraform-prod=xxxxx"
+#
+# 3. For multi-team deployments, use Terraform workspaces:
+#    terraform workspace new production
+#    terraform workspace select production
+#
+# 4. Enable Terraform state encryption/locking in production:
+#    - Use S3 backend with encryption
+#    - Enable state locking with DynamoDB
+#
+# 5. Use separate tfvars files per environment:
+#    terraform apply -var-file=environments/production.tfvars
+#
+# 6. Implement CI/CD pipeline for automated deployments:
+#    - Use GitHub Actions or GitLab CI
+#    - Require approval before apply
+#    - Maintain audit trail of all changes

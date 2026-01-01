@@ -6,7 +6,7 @@ This project deploys a complete Rancher management cluster and non-production ap
 
 - **Rancher Manager Cluster**: 3 nodes (VM 401-403), runs Rancher control plane
 - **NPRD Apps Cluster**: 3 nodes (VM 404-406), non-production workloads
-- **Network**: Unified VLAN 14 (192.168.14.0/24) for simplified management
+- **Network**: Unified VLAN 14 (192.168.1.0/24) for simplified management
 - **Provider**: dataknife/pve v1.0.0 (improved reliability and performance)
 
 ## Project Structure
@@ -69,9 +69,9 @@ Utility and setup scripts:
 
 #### Network Configuration
 - **VLAN**: 14 (unified segment)
-- **Manager nodes**: 192.168.14.10x (100-102)
-- **Apps nodes**: 192.168.14.11x (110-112)
-- **Gateway**: 192.168.14.1
+- **Manager nodes**: 192.168.1.10x (100-102)
+- **Apps nodes**: 192.168.1.11x (110-112)
+- **Gateway**: 192.168.1.1
 - **Cloud-init**: Handles static IP, DNS, hostname configuration
 
 #### Cluster Orchestration Pattern
@@ -208,7 +208,7 @@ terraform apply
 # Via UI: VMs → Select VM → Console → Monitor cloud-init
 
 # Verify in VM
-ssh ubuntu@192.168.14.100
+ssh ubuntu@192.168.1.100
 cloud-init status
 cloud-init query
 ip addr show
