@@ -78,6 +78,11 @@ clusters = {
 # RANCHER CONFIGURATION
 # ============================================================================
 
+# Enable Rancher deployment (set to true after RKE2 clusters are running)
+# First run: terraform apply (with deploy_rancher = false)
+# Then after RKE2 is ready: change to true and run terraform apply again
+deploy_rancher = false
+
 rancher_version = "v2.7.7"
 
 # Initial admin password (change immediately after first login!)

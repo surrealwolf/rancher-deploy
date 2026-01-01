@@ -57,19 +57,9 @@ output "cluster_name" {
   value = var.cluster_name
 }
 
-# Configure Kubernetes provider with kubeconfig
-provider "kubernetes" {
-  config_path = var.kubeconfig_path
-}
-
-provider "helm" {
-  kubernetes {
-    config_path = var.kubeconfig_path
-  }
-}
-
-# Install cert-manager for Rancher
+# Install cert-manager for Rancher (only if deploying Rancher)
 resource "helm_release" "cert_manager" {
+  count            = var.install_rancher ? 1 : 0
   name             = "cert-manager"
   repository       = "https://charts.jetstack.io"
   chart            = "cert-manager"
@@ -85,8 +75,9 @@ resource "helm_release" "cert_manager" {
   depends_on = [kubernetes_namespace.rancher]
 }
 
-# Create rancher namespace
+# Create rancher namespace (only if deploying Rancher)
 resource "kubernetes_namespace" "rancher" {
+  count = var.install_rancher ? 1 : 0
   metadata {
     name = "cattle-system"
   }
@@ -98,7 +89,7 @@ resource "helm_release" "rancher" {
   name       = "rancher"
   repository = "https://releases.rancher.com/server-charts/stable"
   chart      = "rancher"
-  namespace  = kubernetes_namespace.rancher.metadata[0].name
+  namespace  = kubernetes_namespace.rancher[0].metadata[0].name
   version    = var.rancher_version
 
   set {

@@ -71,6 +71,12 @@ variable "rancher_hostname" {
   type        = string
 }
 
+variable "deploy_rancher" {
+  description = "Whether to deploy Rancher after RKE2 is ready"
+  type        = bool
+  default     = false
+}
+
 variable "ssh_private_key" {
   description = "Path to SSH private key for VM access"
   type        = string

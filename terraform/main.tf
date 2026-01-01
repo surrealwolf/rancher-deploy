@@ -92,18 +92,18 @@ module "rke2_apps" {
 }
 
 # Deploy Rancher on manager cluster
+# Enable by setting deploy_rancher = true in terraform.tfvars or via -var flag
+# This will only run after RKE2 is deployed and kubeconfig is available
 module "rancher_deployment" {
   source = "./modules/rancher_cluster"
 
   cluster_name     = "rancher-manager"
   node_count       = var.clusters["manager"].node_count
   kubeconfig_path  = pathexpand("~/.kube/rancher-manager.yaml")
-  install_rancher  = true
+  install_rancher  = var.deploy_rancher
   rancher_version  = var.rancher_version
   rancher_password = var.rancher_password
   rancher_hostname = var.rancher_hostname
-
-  depends_on = [module.rke2_manager]
 }
 
 # Create local kubeconfig files for each cluster
