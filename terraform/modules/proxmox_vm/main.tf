@@ -57,6 +57,11 @@ variable "ip_address" {
   type        = string
 }
 
+variable "ssh_private_key" {
+  description = "Path to SSH private key for VM provisioning"
+  type        = string
+}
+
 variable "gateway" {
   description = "Gateway IP"
   type        = string
@@ -137,6 +142,8 @@ resource "proxmox_virtual_environment_vm" "vm" {
   initialization {
     user_account {
       username = "ubuntu"
+      # Add SSH public key for ansible/terraform provisioning
+      keys = [file("${var.ssh_private_key}.pub")]
     }
 
     dns {
