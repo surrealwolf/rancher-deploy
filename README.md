@@ -72,32 +72,36 @@ ssh ubuntu@192.168.1.101
 
 ## Documentation
 
-- **[Getting Started](docs/GETTING_STARTED.md)** - Quick setup guide
-- **[Terraform Guide](docs/TERRAFORM_GUIDE.md)** - Detailed deployment instructions
-- **[Architecture](docs/ARCHITECTURE.md)** - System design and components
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
-- **[Template Creation](docs/TEMPLATE_CREATION.md)** - VM template setup
-- **[Terraform Improvements](docs/TERRAFORM_IMPROVEMENTS.md)** - Provider migration details
+- **[TERRAFORM_SETUP.md](TERRAFORM_SETUP.md)** - Complete Terraform configuration guide
+- **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning details
+- **[docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md)** - Variable reference
+- **[docs/TFVARS_SETUP.md](docs/TFVARS_SETUP.md)** - Setup instructions
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## Project Structure
 
 ```
 .
-├── docs/                    # Documentation
-│   ├── GETTING_STARTED.md
-│   ├── TERRAFORM_GUIDE.md
-│   ├── ARCHITECTURE.md
-│   ├── TROUBLESHOOTING.md
-│   ├── TEMPLATE_CREATION.md
-│   └── TERRAFORM_IMPROVEMENTS.md
-├── terraform/               # Terraform configuration
-│   ├── main.tf
-│   ├── provider.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   ├── terraform.tfvars.example
-│   └── modules/proxmox_vm/
-├── scripts/                 # Utility scripts
+├── docs/                         # Documentation
+│   ├── CLOUD_IMAGE_SETUP.md     # Cloud image provisioning
+│   ├── TERRAFORM_VARIABLES.md   # Variable reference
+│   ├── TFVARS_SETUP.md          # Setup instructions
+│   └── TROUBLESHOOTING.md       # Troubleshooting guide
+├── terraform/                    # Terraform configuration
+│   ├── main.tf                  # Cluster module instantiation
+│   ├── provider.tf              # bpg/proxmox provider config
+│   ├── variables.tf             # Variable definitions
+│   ├── outputs.tf               # Output values
+│   ├── terraform.tfvars         # Environment config (not in git)
+│   ├── terraform.tfvars.example # Config template
+│   ├── modules/
+│   │   └── proxmox_vm/          # Reusable VM module
+│   └── environments/            # Legacy environment configs
+├── TERRAFORM_SETUP.md           # Terraform guide
+├── DEPLOYMENT_SUMMARY.md        # Deployment record
+├── README.md                    # This file
+├── Makefile                     # Build automation
+└── .gitignore                   # Git ignore rules
 │   └── setup.sh
 ├── .github/                 # GitHub configuration
 │   └── copilot-instructions.md

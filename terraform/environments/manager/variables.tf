@@ -76,7 +76,7 @@ variable "disk_size_gb" {
 variable "gateway" {
   description = "Network gateway"
   type        = string
-  default     = "192.168.14.1"
+  default     = "192.168.1.1"
 }
 
 variable "dns_servers" {
@@ -89,4 +89,16 @@ variable "storage" {
   description = "Storage target"
   type        = string
   default     = "local-vm-zfs"
+}
+
+variable "ip_subnet" {
+  description = "IP subnet base (e.g., '192.168.1')"
+  type        = string
+  default     = "192.168.1"
+}
+
+variable "ip_start_octet" {
+  description = "Starting IP octet (e.g., 100 for 192.168.1.100)"
+  type        = number
+  default     = 100
 }

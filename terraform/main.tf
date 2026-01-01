@@ -6,7 +6,7 @@ module "rancher_manager" {
     "manager-${i + 1}" => {
       vm_id       = 401 + i
       hostname    = "rancher-manager-${i + 1}"
-      ip_address  = "192.168.14.${100 + i}/24"
+      ip_address  = "${var.clusters["manager"].ip_subnet}.${var.clusters["manager"].ip_start_octet + i}/24"
     }
   }
 
@@ -38,7 +38,7 @@ module "nprd_apps" {
     "nprd-apps-${i + 1}" => {
       vm_id       = 404 + i
       hostname    = "nprd-apps-${i + 1}"
-      ip_address  = "192.168.14.${110 + i}/24"
+      ip_address  = "${var.clusters["nprd-apps"].ip_subnet}.${var.clusters["nprd-apps"].ip_start_octet + i}/24"
     }
   }
 

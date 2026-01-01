@@ -2,31 +2,38 @@
 
 ## Overview
 
-This project uses Terraform to deploy Rancher manager and NPRD apps clusters on Proxmox VE using a custom terraform-pve provider.
+This project uses Terraform to deploy Rancher manager and NPRD apps clusters on Proxmox VE using the **bpg/proxmox** Terraform provider v0.90 with Ubuntu 24.04 LTS cloud images.
 
-## Custom Provider
+## Provider
 
-The project uses a custom Terraform provider: **dataknife/pve** (terraform-pve)
+The project uses **bpg/proxmox** v0.90 - a production-ready Terraform provider for Proxmox VE.
 
-Location: `/home/lee/git/terraform-pve`
+GitHub: https://github.com/bpg/terraform-provider-proxmox (1.7K+ stars, 130+ contributors)
 
 ### Key Features
-- Creates QEMU VMs by cloning from templates
-- Configures VM resources (CPU, memory, disk, network)
-- Properly implements Delete operation to remove VMs from Proxmox
-- Supports cloud-init for VM initialization
+- Native support for Proxmox VE API v2
+- Cloud image provisioning with cloud-init
+- Full lifecycle management (create, update, delete)
+- API token authentication (more secure than password)
 
 ### Provider Configuration
 
-The provider is configured in each environment's `main.tf`:
+The provider is configured in `terraform/provider.tf`:
 
 ```hcl
-provider "pve" {
-  endpoint         = var.proxmox_api_url
-  api_user         = var.proxmox_api_user
-  api_token_id     = var.proxmox_token_id
-  api_token_secret = var.proxmox_token_secret
-  insecure         = var.proxmox_tls_insecure
+terraform {
+  required_providers {
+    proxmox = {
+      source  = "bpg/proxmox"
+      version = "~> 0.90"
+    }
+  }
+}
+
+provider "proxmox" {
+  endpoint = var.proxmox_api_url
+  api_token = "${var.proxmox_api_user}!${var.proxmox_api_token_id}=${var.proxmox_api_token_secret}"
+  insecure = var.proxmox_tls_insecure
 }
 ```
 
@@ -35,133 +42,224 @@ provider "pve" {
 ```
 rancher-deploy/
 ├── terraform/
-│   └── environments/
-│       ├── manager/          # Rancher manager cluster (VMs 401-403)
-│       └── nprd-apps/        # NPRD apps cluster (VMs 404-406)
+│   ├── main.tf              # Cluster module instantiation
+│   ├── provider.tf          # Proxmox provider configuration
+│   ├── variables.tf         # Variable definitions
+│   ├── terraform.tfvars     # Environment-specific values (not in git)
+│   ├── terraform.tfvars.example  # Template for tfvars
+│   └── modules/
+│       └── proxmox_vm/      # Reusable VM module
+├── docs/                    # Documentation
+├── DEPLOYMENT_SUMMARY.md    # Deployment record
 └── ...
 ```
 
-## Environments
+## Clusters
 
-### Manager Environment
+IP addresses are sourced from `terraform.tfvars` using the cluster configuration, allowing easy customization without modifying Terraform code.
 
-Located at: `terraform/environments/manager/`
+### Manager Cluster
 
-Creates 3 Rancher manager VMs:
-- **rancher-manager-1**: VM ID 401, IP 192.168.1.10
-- **rancher-manager-2**: VM ID 402, IP 192.168.1.11
-- **rancher-manager-3**: VM ID 403, IP 192.168.1.12
+Creates 3 Rancher manager VMs (IDs 401-403). IPs are calculated from tfvars:
+```hcl
+clusters.manager.ip_subnet = "192.168.1"      # Base subnet (example)
+clusters.manager.ip_start_octet = 100           # Starting octet
+```
 
-**Deploy:**
+Results in:
+- **rancher-manager-1**: VM ID 401, IP 192.168.1.100
+- **rancher-manager-2**: VM ID 402, IP 192.168.1.101
+- **rancher-manager-3**: VM ID 403, IP 192.168.1.102
+
+### NPRD Apps Cluster
+
+Creates 3 app cluster VMs (IDs 404-406). IPs are calculated from tfvars:
+```hcl
+clusters.nprd-apps.ip_subnet = "192.168.1"    # Base subnet (example)
+clusters.nprd-apps.ip_start_octet = 110        # Starting octet
+```
+
+Results in:
+- **nprd-apps-1**: VM ID 404, IP 192.168.1.110
+- **nprd-apps-2**: VM ID 405, IP 192.168.1.111
+- **nprd-apps-3**: VM ID 406, IP 192.168.1.112
+
+## Deployment
+
+**Deploy all clusters:**
 ```bash
-cd terraform/environments/manager
+cd terraform
 terraform init
 terraform plan
 terraform apply
 ```
 
-**Destroy:**
-```bash
-terraform destroy
+**Customize IPs before deployment:**
+
+Edit `terraform.tfvars` and modify the cluster configuration:
+
+```hcl
+clusters = {
+  manager = {
+    ip_subnet      = "192.168.1"   # Change to your subnet
+    ip_start_octet = 100           # Change to your starting IP
+    # ... other settings
+  }
+  nprd-apps = {
+    ip_subnet      = "192.168.1"
+    ip_start_octet = 110
+    # ... other settings
+  }
+}
 ```
 
-### NPRD Apps Environment
-
-Located at: `terraform/environments/nprd-apps/`
-
-Creates 3 NPRD apps cluster VMs:
-- **nprd-apps-1**: VM ID 404, IP 192.168.1.100
-- **nprd-apps-2**: VM ID 405, IP 192.168.1.101
-- **nprd-apps-3**: VM ID 406, IP 192.168.1.102
-
-**Deploy:**
+**Destroy all clusters:**
 ```bash
-cd terraform/environments/nprd-apps
-terraform init
-terraform plan
-terraform apply
-```
-
-**Destroy:**
-```bash
+cd terraform
 terraform destroy
 ```
 
 ## VM ID Allocation
 
-- **Template**: VM 400 (ubuntu-22.04-template)
 - **Manager Cluster**: VMs 401-403
 - **NPRD Apps Cluster**: VMs 404-406
-- **Existing VMs**: 100-115, 120, 102-110 (qbc series, various services)
+
+VM IDs are hardcoded in `terraform/main.tf` via the `for_each` loop (401+i for manager, 404+i for apps). Modify the base IDs if needed for your environment.
 
 ## Authentication
 
-### API Token Format
+### API Token Setup
 
-The custom provider expects:
-- `api_user`: User account (e.g., `root@pam`)
-- `api_token_id`: Token name (e.g., `root-mcp`)
-- `api_token_secret`: Token secret UUID
+The bpg/proxmox provider requires an API token for authentication:
 
-The provider constructs the full token as: `{api_user}!{api_token_id}={api_token_secret}`
+```hcl
+proxmox_api_url = "https://pve.example.com:8006/api2/json"
+proxmox_api_user = "root@pam"                              # User account
+proxmox_api_token_id = "terraform"                         # Token name
+proxmox_api_token_secret = "xxxxxxxx-xxxx-xxxx-xxxx..."  # Token secret
+```
 
 ### Creating a Token in Proxmox
 
-1. Log into Proxmox Web UI
-2. Navigate to **Datacenter → Permissions → API Tokens**
-3. Click **Add**
-4. Fill in:
-   - User: `root@pam` (or your user)
-   - Token ID: `root-mcp` (or your choice)
-   - Privileges: Select appropriate privileges
-5. Copy the token secret (only shown once)
+1. SSH into Proxmox node: `ssh root@pve.example.com`
+2. Create API token:
+   ```bash
+   pveum user token add root@pam terraform --privsep=0
+   ```
+3. Copy the token secret (only shown once)
+4. Add to `terraform.tfvars`:
+   ```hcl
+   proxmox_api_token_secret = "<token-secret-uuid>"
+   ```
+
+### Environment Variable Alternative
+
+For security, use environment variables instead of tfvars:
+
+```bash
+export PROXMOX_VE_API_URL="https://pve.example.com:8006/api2/json"
+export PROXMOX_VE_USERNAME="root@pam"
+export PROXMOX_VE_API_TOKEN="terraform@pve!terraform=<secret>"
+export PROXMOX_VE_INSECURE=true
+```
+
+Then the provider will read these automatically.
 
 ## Configuration
 
-Each environment has a `terraform.tfvars` file with:
-- Proxmox API URL and credentials
-- VM template ID (400)
-- VM ID base (for each cluster)
-- Resource specifications (CPU, memory, disk)
-- Network configuration (gateway, DNS servers, storage)
+All configuration comes from `terraform.tfvars`:
+
+**Proxmox Access:**
+- `proxmox_api_url`: Proxmox API endpoint
+- `proxmox_api_user`: User account (typically `root@pam`)
+- `proxmox_api_token_id`: Token name
+- `proxmox_api_token_secret`: Token secret
+- `proxmox_node`: Target Proxmox node
+
+**Cloud Images:**
+- `ubuntu_cloud_image_url`: Ubuntu cloud image URL (default: 24.04 Noble)
+
+**Cluster Configuration (per cluster):**
+- `name`: Cluster name
+- `node_count`: Number of VMs
+- `cpu_cores`: CPU per VM
+- `memory_mb`: Memory per VM
+- `disk_size_gb`: Disk size per VM
+- `domain`: DNS domain
+- `ip_subnet`: Network subnet (e.g., "192.168.1")
+- `ip_start_octet`: Starting IP octet (e.g., 100 → 192.168.1.100)
+- `gateway`: Network gateway IP
+- `dns_servers`: List of DNS servers
+- `storage`: Proxmox storage datastore ID
+
+**Rancher Configuration:**
+- `rancher_version`: Rancher version (default: v2.7.7)
+- `rancher_password`: Initial admin password
+- `rancher_hostname`: Rancher manager hostname
+
+**SSH:**
+- `ssh_private_key`: Path to SSH key for VM access
 
 ## Notes
 
-- The custom provider properly implements the Delete operation, allowing `terraform destroy` to remove VMs from Proxmox
-- VMs are created by cloning from the template (VM 400)
-- Cloud-init is configured to set up the ubuntu user with specified IP configuration
-- Both clusters use the same network subnet (192.168.1.0/24) with different IP ranges
+- VMs are created from Ubuntu cloud images downloaded to the `images-import` storage
+- Cloud-init is configured to set up networking, DNS, and hostnames
+- Both clusters can use the same subnet with different IP ranges (controlled by `ip_start_octet`)
+- Storage must support `images-import` content type for cloud image downloads
+- All VM IPs are dynamically calculated: `{ip_subnet}.{ip_start_octet + index}`
 
 ## Troubleshooting
 
-### Provider Not Found
-
-If you get "provider not installed" errors:
+### Terraform Validate Fails
 
 ```bash
-cd /home/lee/git/terraform-pve
-make install
+cd terraform
+terraform validate
 ```
 
-This rebuilds and installs the custom provider to `~/.terraform.d/plugins/`.
+If errors occur, check:
+- All variables in `terraform.tfvars` match the definitions in `variables.tf`
+- Required variables (`proxmox_api_url`, `clusters`, etc.) are defined
 
-### Module Not Installed
+### Authentication Issues
 
-Reinitialize Terraform:
+**Error:** "authentication failed"
+
+Check:
+1. API token exists in Proxmox: `pveum token list`
+2. Token secret is correct in `terraform.tfvars`
+3. Proxmox API URL is accessible: `curl -k https://pve.example.com:8006/api2/json/version`
+4. Token has proper permissions for VM operations
+
+### Cloud Image Download Fails
+
+**Error:** "storage 'images-import' is not configured for content-type 'import'"
+
+Fix: Verify storage exists and supports 'import' content type:
 
 ```bash
-cd terraform/environments/{manager|nprd-apps}
-rm -rf .terraform .terraform.lock.hcl
-terraform init
+pvesh get /storage/images-import -noborder=1
 ```
 
-### Destroy Doesn't Remove VMs
+Output should include `content: import,iso,vztmpl`
 
-Ensure you're using the latest version of the custom provider with the Delete function implemented. Rebuild if needed:
+### Wrong IPs Assigned
+
+Verify cluster configuration in `terraform.tfvars`:
+
+```hcl
+clusters = {
+  manager = {
+    ip_subnet = "192.168.1"
+    ip_start_octet = 100  # Results in 192.168.1.100-102
+  }
+  # ...
+}
+```
+
+Then re-plan before applying:
 
 ```bash
-cd /home/lee/git/terraform-pve
-make install
+terraform plan -out=tfplan
+terraform show tfplan
 ```
-
-Then reinitialize in the environment directory.

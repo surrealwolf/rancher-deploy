@@ -41,6 +41,7 @@ variable "clusters" {
     disk_size_gb   = number
     domain         = string
     ip_subnet      = string
+    ip_start_octet = number         # Starting IP octet (e.g., 100 for 192.168.1.100)
     gateway        = string
     dns_servers    = list(string)
     storage        = string

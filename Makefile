@@ -1,8 +1,7 @@
-.PHONY: help init plan apply destroy validate fmt clean setup check-prereqs
+.PHONY: help init plan apply destroy validate fmt clean check-prereqs
 
-# Variables
-MANAGER_ENV := terraform/environments/manager
-NPRD_ENV := terraform/environments/nprd-apps
+# Terraform directory
+TF_DIR := terraform
 
 help:
 	@echo "Rancher on Proxmox - Terraform Management"
@@ -10,102 +9,55 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  check-prereqs        - Check for required tools"
-	@echo "  setup                - Interactive setup wizard"
 	@echo ""
-	@echo "Manager Cluster:"
-	@echo "  init-manager         - Initialize manager environment"
-	@echo "  plan-manager         - Show manager infrastructure plan"
-	@echo "  apply-manager        - Deploy manager cluster"
-	@echo "  destroy-manager      - Destroy manager cluster"
-	@echo "  validate-manager     - Validate manager configuration"
-	@echo ""
-	@echo "NPRD-Apps Cluster:"
-	@echo "  init-nprd            - Initialize nprd-apps environment"
-	@echo "  plan-nprd            - Show nprd-apps infrastructure plan"
-	@echo "  apply-nprd           - Deploy nprd-apps cluster"
-	@echo "  destroy-nprd         - Destroy nprd-apps cluster"
-	@echo "  validate-nprd        - Validate nprd-apps configuration"
-	@echo ""
-	@echo "Utilities:"
-	@echo "  fmt                  - Format all Terraform files"
-	@echo "  validate             - Validate all configurations"
+	@echo "Terraform Operations:"
+	@echo "  init                 - Initialize Terraform"
+	@echo "  plan                 - Show infrastructure plan"
+	@echo "  apply                - Deploy infrastructure (both clusters)"
+	@echo "  destroy              - Destroy infrastructure"
+	@echo "  validate             - Validate Terraform configuration"
+	@echo "  fmt                  - Format Terraform files"
 	@echo "  clean                - Remove Terraform cache and state"
 	@echo "  help                 - Show this help message"
+	@echo ""
+	@echo "Usage:"
+	@echo "  1. make init       - Initialize Terraform"
+	@echo "  2. make plan       - Preview changes"
+	@echo "  3. make apply      - Deploy infrastructure"
 
 check-prereqs:
 	@echo "Checking prerequisites..."
 	@command -v terraform >/dev/null 2>&1 || { echo "terraform is required"; exit 1; }
-	@command -v kubectl >/dev/null 2>&1 || { echo "kubectl is recommended"; }
-	@command -v helm >/dev/null 2>&1 || { echo "helm is recommended"; }
+	@command -v curl >/dev/null 2>&1 || { echo "curl is required"; exit 1; }
 	@echo "✓ All required tools found"
 
-setup:
-	@chmod +x setup.sh
-	@./setup.sh
+# Terraform targets
+init: check-prereqs
+	@cd $(TF_DIR) && terraform init
 
-# Manager cluster targets
-init-manager:
-	@cd $(MANAGER_ENV) && terraform init
+plan: init
+	@cd $(TF_DIR) && terraform plan -out=tfplan
 
-plan-manager: init-manager
-	@cd $(MANAGER_ENV) && terraform plan -out=tfplan
+apply:
+	@cd $(TF_DIR) && terraform apply tfplan
 
-apply-manager:
-	@cd $(MANAGER_ENV) && terraform apply tfplan
-
-destroy-manager:
-	@cd $(MANAGER_ENV) && terraform destroy
-
-validate-manager:
-	@cd $(MANAGER_ENV) && terraform validate
-
-# NPRD-Apps cluster targets
-init-nprd:
-	@cd $(NPRD_ENV) && terraform init
-
-plan-nprd: init-nprd
-	@cd $(NPRD_ENV) && terraform plan -out=tfplan
-
-apply-nprd:
-	@cd $(NPRD_ENV) && terraform apply tfplan
-
-destroy-nprd:
-	@cd $(NPRD_ENV) && terraform destroy
-
-validate-nprd:
-	@cd $(NPRD_ENV) && terraform validate
-
-# Utility targets
-fmt:
-	@echo "Formatting Terraform files..."
-	@terraform fmt -recursive terraform/
-
-validate:
-	@echo "Validating manager configuration..."
-	@cd $(MANAGER_ENV) && terraform validate
-	@echo "Validating nprd-apps configuration..."
-	@cd $(NPRD_ENV) && terraform validate
-	@echo "✓ All configurations valid"
-
-clean:
-	@echo "Cleaning Terraform cache..."
-	@find terraform -name ".terraform" -type d -exec rm -rf {} + 2>/dev/null || true
-	@find terraform -name ".terraform.lock.hcl" -delete 2>/dev/null || true
-	@find terraform -name "tfplan" -delete 2>/dev/null || true
-	@echo "✓ Cleaned"
-
-# Quick deploy all
-deploy-all: plan-manager apply-manager plan-nprd apply-nprd
-	@echo "✓ All clusters deployed"
-
-# Destroy all
-destroy-all:
-	@echo "Warning: This will destroy ALL clusters"
+destroy:
+	@echo "Warning: This will destroy ALL infrastructure"
 	@read -p "Are you sure? (type 'yes'): " confirm; \
 	if [ "$$confirm" = "yes" ]; then \
-		$(MAKE) destroy-manager; \
-		$(MAKE) destroy-nprd; \
-		echo "✓ All clusters destroyed"; \
+		cd $(TF_DIR) && terraform destroy; \
 	else \
 		echo "Aborted"; \
 	fi
+
+validate:
+	@cd $(TF_DIR) && terraform validate
+
+fmt:
+	@cd $(TF_DIR) && terraform fmt -recursive
+
+clean:
+	@cd $(TF_DIR) && rm -rf .terraform .terraform.lock.hcl tfplan terraform.tfstate*
+	@echo "✓ Cleaned"
+
+.DEFAULT_GOAL := help

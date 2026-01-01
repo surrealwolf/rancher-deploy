@@ -90,3 +90,15 @@ variable "storage" {
   type        = string
   default     = "local-lvm"
 }
+
+variable "ip_subnet" {
+  description = "IP subnet base (e.g., '192.168.1')"
+  type        = string
+  default     = "192.168.1"
+}
+
+variable "ip_start_octet" {
+  description = "Starting IP octet (e.g., 110 for 192.168.1.110)"
+  type        = number
+  default     = 110
+}

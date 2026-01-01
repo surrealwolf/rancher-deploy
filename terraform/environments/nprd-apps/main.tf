@@ -24,7 +24,7 @@ resource "pve_qemu" "nprd_apps_nodes" {
     "nprd-apps-${i + 1}" => {
       vm_id       = var.vm_id_base + i
       hostname    = "nprd-apps-${i + 1}"
-      ip_octet    = 100 + i
+      ip_octet    = var.ip_start_octet + i
     }
   }
 
@@ -40,7 +40,7 @@ resource "pve_qemu" "nprd_apps_nodes" {
   scsi0     = "${var.storage}:${var.disk_size_gb}"
   net0      = "virtio,bridge=vmbr0"
   ciuser    = "ubuntu"
-  ipconfig0 = "ip=192.168.14.${each.value.ip_octet}/24,gw=${var.gateway}"
+  ipconfig0 = "ip=${var.ip_subnet}.${each.value.ip_octet}/24,gw=${var.gateway}"
   nameserver = join(" ", var.dns_servers)
   startup   = true
 }

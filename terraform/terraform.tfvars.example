@@ -56,8 +56,7 @@ clusters = {
     memory_mb      = 8192           # 4GB minimum, 8GB recommended
     disk_size_gb   = 50             # Expand as needed for workloads
     domain         = "example.com"  # DNS domain for VMs
-    ip_subnet      = "192.168.1"   # Base subnet (VMs will be .100, .101, .102)
-    gateway        = "192.168.1.1" # Network gateway
+    ip_subnet      = "192.168.1"   # Base subnet (VMs will be .100, .101, .102)    ip_start_octet = 100            # Starting IP octet (VMs will be .100, .101, .102)    gateway        = "192.168.1.1" # Network gateway
     dns_servers    = ["8.8.8.8", "8.8.4.4"]
     storage        = "local-lvm"    # Proxmox storage datastore ID
   }
@@ -69,8 +68,7 @@ clusters = {
     memory_mb      = 8192           # 4GB minimum
     disk_size_gb   = 50             # Expand as needed
     domain         = "example.com"
-    ip_subnet      = "192.168.1"   # Same subnet (VMs will be .110, .111)
-    gateway        = "192.168.1.1"
+    ip_subnet      = "192.168.1"   # Same subnet (VMs will be .110, .111)    ip_start_octet = 110            # Starting IP octet (VMs will be .110, .111)    gateway        = "192.168.1.1"
     dns_servers    = ["8.8.8.8", "8.8.4.4"]
     storage        = "local-lvm"
   }
