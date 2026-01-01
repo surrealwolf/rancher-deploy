@@ -48,7 +48,7 @@ output "cluster_ips" {
   description = "Manager cluster node IP addresses"
   value = {
     for name, vm in pve_qemu.manager_nodes :
-    name => regex("^ip=([0-9.]+)", vm.ipconfig0)[0]
+    name => vm.ipconfig0 != null ? regex("^ip=([0-9.]+)", vm.ipconfig0)[0] : ""
   }
 }
 

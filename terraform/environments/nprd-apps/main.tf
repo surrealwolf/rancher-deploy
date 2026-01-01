@@ -49,7 +49,7 @@ output "cluster_ips" {
   description = "NPRD Apps cluster node IP addresses"
   value = {
     for name, vm in pve_qemu.nprd_apps_nodes :
-    name => regex("^ip=([0-9.]+)", vm.ipconfig0)[0]
+    name => vm.ipconfig0 != null ? regex("^ip=([0-9.]+)", vm.ipconfig0)[0] : ""
   }
 }
 
