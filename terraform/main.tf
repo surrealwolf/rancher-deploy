@@ -6,7 +6,7 @@ module "rancher_manager" {
     "manager-${i + 1}" => {
       vm_id       = 401 + i
       hostname    = "rancher-manager-${i + 1}"
-      ip_address  = "192.168.1.${100 + i}/24"
+      ip_address  = "192.168.14.${100 + i}/24"
     }
   }
 
@@ -25,6 +25,7 @@ module "rancher_manager" {
   gateway      = var.clusters["manager"].gateway
   dns_servers  = var.clusters["manager"].dns_servers
   domain       = var.clusters["manager"].domain
+  vlan_id      = 14
   
   ssh_private_key = var.ssh_private_key
 }
@@ -37,7 +38,7 @@ module "nprd_apps" {
     "nprd-apps-${i + 1}" => {
       vm_id       = 404 + i
       hostname    = "nprd-apps-${i + 1}"
-      ip_address  = "192.168.2.${100 + i}/24"
+      ip_address  = "192.168.14.${110 + i}/24"
     }
   }
 
@@ -56,8 +57,12 @@ module "nprd_apps" {
   gateway      = var.clusters["nprd-apps"].gateway
   dns_servers  = var.clusters["nprd-apps"].dns_servers
   domain       = var.clusters["nprd-apps"].domain
+  vlan_id      = 14
   
   ssh_private_key = var.ssh_private_key
+  
+  # Wait for manager nodes to complete before creating nprd-apps nodes
+  depends_on = [module.rancher_manager]
 }
 
 # Create local kubeconfig files for each cluster

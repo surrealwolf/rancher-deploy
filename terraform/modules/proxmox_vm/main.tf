@@ -1,8 +1,8 @@
 terraform {
   required_providers {
-    proxmox = {
-      source  = "telmate/proxmox"
-      version = "~> 2.9"
+    pve = {
+      source  = "dataknife/pve"
+      version = "1.0.0"
     }
   }
 }
@@ -72,8 +72,14 @@ variable "domain" {
   type        = string
 }
 
+variable "vlan_id" {
+  description = "VLAN ID for network interface"
+  type        = number
+  default     = 0
+}
+
 output "vm_id" {
-  value = proxmox_vm_qemu.vm.vmid
+  value = pve_qemu.vm.vmid
 }
 
 output "ip_address" {
@@ -84,45 +90,17 @@ output "hostname" {
   value = var.hostname
 }
 
-resource "proxmox_vm_qemu" "vm" {
-  name        = var.vm_name
-  vmid        = var.vm_id
-  target_node = var.proxmox_node
-  clone       = "ubuntu-${var.template_id}"
-
-  cores   = var.cpu_cores
-  sockets = 1
-  memory  = var.memory_mb
-
-  disk {
-    type    = "virtio"
-    storage = var.storage
-    size    = "${var.disk_size_gb}G"
-  }
-
-  network {
-    model  = "virtio"
-    bridge = "vmbr0"
-  }
-
-  ciuser = "ubuntu"
-  
+resource "pve_qemu" "vm" {
+  vmid      = var.vm_id
+  name      = var.vm_name
+  node      = var.proxmox_node
+  clone     = var.template_id
+  cores     = var.cpu_cores
+  sockets   = 1
+  memory    = var.memory_mb
+  net0      = "virtio,bridge=vmbr0,tag=${var.vlan_id > 0 ? var.vlan_id : 0}"
+  scsi0     = "${var.storage}:${var.disk_size_gb}"
+  ciuser    = "ubuntu"
   ipconfig0 = "ip=${var.ip_address},gw=${var.gateway}"
   nameserver = join(" ", var.dns_servers)
-
-  additional_wait_for_cloudinit_seconds = 30
-
-  provisioner "remote-exec" {
-    inline = [
-      "echo 'VM is ready'"
-    ]
-
-    connection {
-      type        = "ssh"
-      user        = "ubuntu"
-      private_key = file(var.ssh_private_key)
-      host        = split("/", var.ip_address)[0]
-      timeout     = "5m"
-    }
-  }
 }
