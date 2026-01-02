@@ -73,7 +73,7 @@ module "rke2_manager" {
   server_ips           = [for vm in module.rancher_manager : split("/", vm.ip_address)[0]]
   ssh_private_key_path = pathexpand(var.ssh_private_key)
   ssh_user             = "ubuntu"
-  rke2_version         = "latest"
+  rke2_version         = "v1.34.3+rke2r1"
 
   depends_on = [module.rancher_manager]
 }
@@ -86,7 +86,7 @@ module "rke2_apps" {
   server_ips           = [for vm in module.nprd_apps : split("/", vm.ip_address)[0]]
   ssh_private_key_path = pathexpand(var.ssh_private_key)
   ssh_user             = "ubuntu"
-  rke2_version         = "latest"
+  rke2_version         = "v1.34.3+rke2r1"
 
   depends_on = [module.nprd_apps]
 }

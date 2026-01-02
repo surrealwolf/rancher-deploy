@@ -140,6 +140,8 @@ resource "proxmox_virtual_environment_vm" "vm" {
   }
 
   initialization {
+    type = "nocloud"
+    
     user_account {
       username = "ubuntu"
       # Add SSH public key for ansible/terraform provisioning
