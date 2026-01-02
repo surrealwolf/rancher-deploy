@@ -90,12 +90,10 @@ terraform output rancher_url
 
 ## Documentation
 
-- **[TERRAFORM_SETUP.md](TERRAFORM_SETUP.md)** - Complete Terraform configuration guide
-- **[docs/RANCHER_DEPLOYMENT.md](docs/RANCHER_DEPLOYMENT.md)** - Rancher deployment automation
+- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough with logging
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions (including RKE2 version fix)
 - **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning details
-- **[docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md)** - Variable reference
-- **[docs/TFVARS_SETUP.md](docs/TFVARS_SETUP.md)** - Setup instructions
-- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[docs/MODULES_AND_AUTOMATION.md](docs/MODULES_AND_AUTOMATION.md)** - Terraform modules and RKE2/Rancher automation
 
 ## Documentation
 
