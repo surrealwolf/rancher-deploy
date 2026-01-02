@@ -43,12 +43,7 @@ variable "rke2_version" {
 # Clean up SSH known_hosts for all IPs to prevent host key warnings
 resource "null_resource" "cleanup_known_hosts" {
   provisioner "local-exec" {
-    command = <<-EOT
-      for ip in ${join(" ", concat(var.server_ips, var.agent_ips))}; do
-        ssh-keygen -R "$ip" 2>/dev/null || true
-      done
-      echo "Cleaned up SSH known_hosts for all cluster IPs"
-    EOT
+    command = "bash -c 'for ip in ${join(" ", concat(var.server_ips, var.agent_ips))}; do ssh-keygen -R \"$ip\" 2>/dev/null || true; done; echo \"Cleaned up SSH known_hosts for all cluster IPs\"'"
   }
 }
 
@@ -101,18 +96,7 @@ resource "null_resource" "rke2_server_init" {
 # Wait for SSH to be available on first server node
 resource "null_resource" "wait_for_ssh" {
   provisioner "local-exec" {
-    command = <<-EOT
-      for i in {1..60}; do
-        if ssh -i ${var.ssh_private_key_path} -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.ssh_user}@${var.server_ips[0]} 'echo ready' 2>/dev/null; then
-          echo "SSH is ready"
-          exit 0
-        fi
-        echo "Waiting for SSH... attempt $i/60"
-        sleep 2
-      done
-      echo "SSH never became available"
-      exit 1
-    EOT
+    command = "bash -c 'for i in {1..60}; do if ssh -i ${var.ssh_private_key_path} -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.ssh_user}@${var.server_ips[0]} \"echo ready\" 2>/dev/null; then echo \"SSH is ready\"; exit 0; fi; echo \"Waiting for SSH... attempt $i/60\"; sleep 2; done; echo \"SSH never became available\"; exit 1'"
   }
 
   depends_on = [null_resource.rke2_server_init]
@@ -121,18 +105,7 @@ resource "null_resource" "wait_for_ssh" {
 # Wait for RKE2 server to be ready (not just SSH)
 resource "null_resource" "wait_for_rke2" {
   provisioner "local-exec" {
-    command = <<-EOT
-      for i in {1..120}; do
-        if ssh -i ${var.ssh_private_key_path} -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.ssh_user}@${var.server_ips[0]} 'sudo cat /var/lib/rancher/rke2/server/node-token' 2>/dev/null; then
-          echo "RKE2 server is ready with token file"
-          exit 0
-        fi
-        echo "Waiting for RKE2 server... attempt $i/120"
-        sleep 2
-      done
-      echo "RKE2 server never became ready"
-      exit 1
-    EOT
+    command = "bash -c 'for i in {1..120}; do if ssh -i ${var.ssh_private_key_path} -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.ssh_user}@${var.server_ips[0]} \"sudo cat /var/lib/rancher/rke2/server/node-token\" 2>/dev/null; then echo \"RKE2 server is ready with token file\"; exit 0; fi; echo \"Waiting for RKE2 server... attempt $i/120\"; sleep 2; done; echo \"RKE2 server never became ready\"; exit 1'"
   }
 
   depends_on = [null_resource.wait_for_ssh]
@@ -152,18 +125,7 @@ resource "null_resource" "wait_for_server_ssh" {
   count = length(var.server_ips) > 1 ? length(var.server_ips) - 1 : 0
 
   provisioner "local-exec" {
-    command = <<-EOT
-      for i in {1..60}; do
-        if ssh -i ${var.ssh_private_key_path} -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.ssh_user}@${var.server_ips[count.index + 1]} 'echo ready' 2>/dev/null; then
-          echo "SSH is ready on ${var.server_ips[count.index + 1]}"
-          exit 0
-        fi
-        echo "Waiting for SSH on ${var.server_ips[count.index + 1]}... attempt $i/60"
-        sleep 2
-      done
-      echo "SSH never became available on ${var.server_ips[count.index + 1]}"
-      exit 1
-    EOT
+    command = "bash -c 'for i in {1..60}; do if ssh -i ${var.ssh_private_key_path} -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.ssh_user}@${var.server_ips[count.index + 1]} \"echo ready\" 2>/dev/null; then echo \"SSH is ready on ${var.server_ips[count.index + 1]}\"; exit 0; fi; echo \"Waiting for SSH on ${var.server_ips[count.index + 1]}... attempt $i/60\"; sleep 2; done; echo \"SSH never became available on ${var.server_ips[count.index + 1]}\"; exit 1'"
   }
 
   depends_on = [null_resource.get_server_token]
@@ -200,18 +162,7 @@ resource "null_resource" "wait_for_agent_ssh" {
   count = length(var.agent_ips)
 
   provisioner "local-exec" {
-    command = <<-EOT
-      for i in {1..60}; do
-        if ssh -i ${var.ssh_private_key_path} -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.ssh_user}@${var.agent_ips[count.index]} 'echo ready' 2>/dev/null; then
-          echo "SSH is ready on ${var.agent_ips[count.index]}"
-          exit 0
-        fi
-        echo "Waiting for SSH on ${var.agent_ips[count.index]}... attempt $i/60"
-        sleep 2
-      done
-      echo "SSH never became available on ${var.agent_ips[count.index]}"
-      exit 1
-    EOT
+    command = "bash -c 'for i in {1..60}; do if ssh -i ${var.ssh_private_key_path} -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.ssh_user}@${var.agent_ips[count.index]} \"echo ready\" 2>/dev/null; then echo \"SSH is ready on ${var.agent_ips[count.index]}\"; exit 0; fi; echo \"Waiting for SSH on ${var.agent_ips[count.index]}... attempt $i/60\"; sleep 2; done; echo \"SSH never became available on ${var.agent_ips[count.index]}\"; exit 1'"
   }
 
   depends_on = [null_resource.get_server_token]
