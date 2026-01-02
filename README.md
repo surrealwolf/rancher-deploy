@@ -294,13 +294,21 @@ Deployment timing (typical):
 - **Terraform Docs**: https://www.terraform.io/docs/
 - **Rancher Docs**: https://rancher.com/docs/
 
+## Contributing
+
+Thank you for your interest in contributing! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development setup and workflow
+- Code standards and testing procedures
+- Pull request guidelines
+- Issue reporting guidelines
+- RKE2 version management guidelines
+
+We're committed to maintaining a welcoming community - see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for our standards.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history, features, and major changes.
+
 ## License
 
 This project is licensed under the MIT License.
-
-## Contributing
-
-Contributions are welcome! Please ensure:
-- Documentation is updated
-- Terraform code is properly formatted: `terraform fmt -recursive`
-- Changes are tested before submission
