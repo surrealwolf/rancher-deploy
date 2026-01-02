@@ -6,37 +6,60 @@ This project deploys a complete Rancher management cluster and non-production ap
 
 - **Rancher Manager Cluster**: 3 nodes (VM 401-403), runs Rancher control plane
 - **NPRD Apps Cluster**: 3 nodes (VM 404-406), non-production workloads
-- **Network**: Unified VLAN 14 (192.168.1.0/24) for simplified management
-- **Provider**: dataknife/pve v1.0.0 (improved reliability and performance)
+- **Network**: Unified VLAN 14 (192.168.1.x/24) for simplified management
+- **Provider**: bpg/proxmox v0.90.0 (reliable, well-maintained)
+- **Kubernetes**: RKE2 v1.34.3+rke2r1 (specific stable version - NOT "latest")
+
+## Latest Updates (Jan 1, 2026)
+
+### Critical Fix: RKE2 Version
+- **Issue**: RKE2 "latest" is not a downloadable release
+- **Solution**: Use specific version tags like `v1.34.3+rke2r1`
+- **Check**: https://github.com/rancher/rke2/tags for available versions
+- **Prevention**: Always validate version exists before deployment
+
+### Cloud-Init Integration
+- Added `wait_for_cloud_init` provisioner to ensure networking is ready before RKE2 installation
+- Waits for `/var/lib/cloud/instance/boot-finished` and `cloud-init status --wait`
+- Prevents RKE2 installation on systems with incomplete networking
+
+### RKE2 Installation Improvements
+- Changed from piped curl to download + execute pattern for better error handling
+- Fixed environment variable passing with `sudo -E bash -c` pattern
+- Added cleanup of SSH known_hosts to prevent host key warnings
+- Added explicit SSH connectivity checks before RKE2 operations
+- Added token file polling with 120 attempts over 4 minutes
+
+### Logging Support
+- Added `apply.sh` script in root directory with automatic logging
+- Logs saved to timestamped files: `terraform/terraform-<timestamp>.log`
+- Debug logging enabled via `TF_LOG=debug` environment variable
+- Log levels: trace, debug, info, warn, error
+- See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for logging details
 
 ## Project Structure
 
 ### Documentation (`docs/`)
 Core documentation for users and developers:
-- `GETTING_STARTED.md` - Quick start guide for new users
-- `TERRAFORM_GUIDE.md` - Detailed deployment and configuration
-- `ARCHITECTURE.md` - System design, network topology, and components
-- `TROUBLESHOOTING.md` - Common issues and solutions
-- `TEMPLATE_CREATION.md` - VM template setup for Proxmox
-- `TERRAFORM_IMPROVEMENTS.md` - Provider migration (telmate → dataknife/pve)
+- `DEPLOYMENT_GUIDE.md` - Complete deployment guide with logging instructions
+- `TERRAFORM_VARIABLES.md` - Detailed variable reference
+- `TROUBLESHOOTING.md` - Common issues and solutions (includes RKE2 version fix)
+- `CLOUD_IMAGE_SETUP.md` - Cloud image provisioning details
+- `TFVARS_SETUP.md` - Setup and configuration instructions
+- `RANCHER_DEPLOYMENT.md` - Rancher deployment automation
 
 ### Terraform Configuration (`terraform/`)
 Infrastructure-as-code using Terraform:
-- `main.tf` - Cluster module definitions and orchestration
-- `provider.tf` - Proxmox provider configuration
+- `main.tf` - Cluster module definitions (uses v1.34.3+rke2r1)
+- `provider.tf` - bpg/proxmox provider configuration with logging comments
 - `variables.tf` - Input variable definitions and defaults
 - `outputs.tf` - Output values for cluster access
 - `terraform.tfvars.example` - Example variable values (copy and customize)
 - `modules/proxmox_vm/` - Reusable VM resource module
+- `modules/rke2_cluster/` - RKE2 installation with provisioners
 
-### Scripts (`scripts/`)
-Utility and setup scripts:
-- `setup.sh` - Initial environment setup
-- `SETUP_COMPLETE.sh` - Post-deployment validation
-
-### Root Documentation
-- `README.md` - Project overview with quick-start
-- `.github/copilot-instructions.md` - This file
+### Scripts (Root)
+- `apply.sh` - Deploy with automatic logging (recommended method)
 
 ## Key Guidelines
 
@@ -140,33 +163,30 @@ Include:
 
 ### Provider Information
 
-#### Current: dataknife/pve v1.0.0
-**Advantages over telmate/proxmox:**
+#### Current: bpg/proxmox v0.90.0
+**Advantages over other providers:**
 - ✅ Reliable task polling with exponential backoff retry
 - ✅ Better error handling and diagnostics
 - ✅ Proper cloud-init integration
-- ✅ Configurable debug logging (PROXMOX_LOG_LEVEL)
-- ✅ Full Proxmox VE 9.x support
+- ✅ Full Proxmox VE 8.x and 9.x support
 - ✅ Improved API stability
+- ✅ Active community development (1.7K+ GitHub stars, 130+ contributors)
 
-**Resource Type**: `pve_qemu` for QEMU VMs
+**Resource Type**: `proxmox_virtual_environment_vm` for QEMU VMs
 
 **Provider Configuration:**
 ```hcl
-provider "pve" {
-  endpoint         = var.proxmox_api_url
-  api_user         = var.proxmox_api_user
-  api_token_id     = var.proxmox_api_token_id
-  api_token_secret = var.proxmox_api_token_secret
-  insecure         = var.proxmox_tls_insecure
+provider "proxmox" {
+  endpoint  = var.proxmox_api_url
+  api_token = "${var.proxmox_api_user}!${var.proxmox_api_token_id}=${var.proxmox_api_token_secret}"
+  insecure  = var.proxmox_tls_insecure
+  
+  ssh {
+    agent    = true
+    username = "root"
+  }
 }
 ```
-
-#### Previous: telmate/proxmox (~2.9)
-- Deprecated and no longer maintained
-- Migration completed in commit 2d68033
-- Issues with task polling and error handling
-- Limited Proxmox VE 9.x support
 
 ### Best Practices
 
@@ -175,6 +195,7 @@ provider "pve" {
 2. **State isolation**: Separate tfvars for different environments
 3. **Modularity**: Reuse modules, avoid code duplication
 4. **Documentation**: Every variable must be documented
+5. **Version pinning**: Use specific versions (RKE2), not "latest"
 5. **Version control**: Git for all code and examples
 
 #### Cluster Deployment
@@ -274,23 +295,55 @@ terraform console  # Then: keys(var.*)
 ### Handling Issues and Troubleshooting
 
 1. **Reproduce**: Run with debug logging enabled
+   ```bash
+   export TF_LOG=debug TF_LOG_PATH=terraform.log
+   terraform apply -auto-approve
+   ```
+
 2. **Gather info**:
    - Terraform state: `terraform state list`
+   - Terraform logs: Check `terraform/terraform-*.log`
    - Proxmox task history
    - VM console output
    - Cloud-init logs in VM
+
 3. **Document solution**: Add to TROUBLESHOOTING.md if applicable
 4. **Test fix**: Verify in test environment
 5. **Commit**: Reference issue if applicable
 
-### Upgrading Provider Version
+### RKE2 Version Management
 
-1. **Test in isolated environment**
-2. **Update `provider.tf`**: Modify version constraint
-3. **Update documentation**: Note breaking changes
-4. **Test full deployment**: `terraform init → plan → apply`
-5. **Document changes**: Add to TERRAFORM_IMPROVEMENTS.md
-6. **Commit**: Clear migration notes in commit message
+1. **Check available versions**: https://github.com/rancher/rke2/tags
+2. **Always use specific versions**: `v1.34.3+rke2r1` NOT "latest"
+3. **Update in two places**:
+   - `terraform/main.tf` - Module calls for both clusters
+   - `terraform/modules/rke2_cluster/main.tf` - Module default
+4. **Clean state after version change**:
+   ```bash
+   rm -f terraform.tfstate*
+   terraform apply -auto-approve
+   ```
+
+### Deploying with Logging
+
+1. **Using the root script**:
+   ```bash
+   ./apply.sh -auto-approve
+   ```
+
+2. **Manual deployment with logging**:
+   ```bash
+   cd terraform
+   export TF_LOG=debug TF_LOG_PATH=terraform.log
+   terraform apply -auto-approve
+   ```
+
+3. **Different log levels**:
+   ```bash
+   TF_LOG=trace    # Most verbose
+   TF_LOG=debug    # Detailed
+   TF_LOG=info     # Normal
+   ```
 
 ## Testing Recommendations
 

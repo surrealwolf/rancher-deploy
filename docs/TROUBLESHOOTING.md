@@ -303,6 +303,159 @@ Connection refused or timeout
 
 ## Kubernetes/Rancher Issues
 
+### Issue: RKE2 installation fails with "latest" version
+
+**Error:**
+```
+curl: (22) The requested URL returned error: 404
+Failed to enable unit: Unit file rke2-server.service does not exist
+```
+
+**Root Cause:**
+The RKE2 installer cannot download a release called "latest". Only specific version tags (e.g., v1.34.3+rke2r1) are available as downloadable releases.
+
+**Solutions:**
+
+1. **Verify using actual release version:**
+   ```hcl
+   # In terraform/main.tf, use specific version:
+   rke2_version = "v1.34.3+rke2r1"  # CORRECT - actual released version
+   rke2_version = "latest"          # WRONG - not a downloadable release
+   ```
+
+2. **Check available versions:**
+   ```bash
+   # Visit GitHub releases page
+   curl -s https://api.github.com/repos/rancher/rke2/releases?per_page=10 | jq '.[].tag_name'
+   # Or browse: https://github.com/rancher/rke2/tags
+   ```
+
+3. **Latest stable version examples:**
+   - v1.35.0+rke2r1 (latest)
+   - v1.34.3+rke2r1 (stable)
+   - v1.33.7+rke2r1 (supported)
+   - v1.32.11+rke2r1 (supported)
+
+4. **Update terraform.tfvars if needed:**
+   ```hcl
+   # terraform/terraform.tfvars
+   rke2_version = "v1.34.3+rke2r1"
+   ```
+
+5. **Clean state and redeploy:**
+   ```bash
+   cd terraform
+   rm -f terraform.tfstate*
+   terraform apply -auto-approve
+   ```
+
+**Prevention:**
+Always use specific version tags. Check GitHub releases before setting `rke2_version` variable.
+
+### Issue: RKE2 installation script download fails
+
+**Error:**
+```
+curl: (7) Failed to connect to get.rke2.io port 443: Connection refused
+```
+
+**Solutions:**
+
+1. **Check internet connectivity:**
+   ```bash
+   ping github.com
+   curl -I https://get.rke2.io
+   ```
+
+2. **Verify GitHub is accessible:**
+   ```bash
+   # RKE2 uses get.rke2.io which redirects to GitHub releases
+   curl -L https://get.rke2.io | head -20
+   ```
+
+3. **Check firewall rules:**
+   - Proxmox host must allow outbound HTTPS to github.com
+   - VMs must allow outbound HTTPS to github.com
+   - Test from VM: `curl https://api.github.com`
+
+4. **Retry with increased timeout:**
+   ```bash
+   # Wait longer for provisioners
+   export TF_PLUGIN_LOG=trace
+   terraform apply
+   ```
+
+### Issue: RKE2 server doesn't start after installation
+
+**Symptom:** Installation script completes but `systemctl status rke2-server` shows failed
+
+**Solutions:**
+
+1. **Check SSH into VM and verify installation:**
+   ```bash
+   ssh -i ~/.ssh/id_rsa ubuntu@192.168.1.100
+   sudo systemctl status rke2-server
+   sudo journalctl -u rke2-server -n 50
+   ```
+
+2. **Verify cloud-init completed:**
+   ```bash
+   cloud-init status
+   cloud-init query
+   ```
+
+3. **Check system resources:**
+   ```bash
+   free -h          # RAM available
+   df -h /          # Disk space
+   nproc             # CPU cores
+   ```
+
+4. **Verify RKE2 binary installed:**
+   ```bash
+   ls -la /usr/local/bin/rke2
+   which rke2
+   ```
+
+5. **Check logs:**
+   ```bash
+   sudo journalctl -u rke2-server --follow
+   tail -100 /var/lib/rancher/rke2/agent/logs/kubelet.log
+   ```
+
+### Issue: RKE2 token file never appears
+
+**Symptom:** `wait_for_rke2` provisioner times out after 120 attempts (~4 minutes)
+
+**Solutions:**
+
+1. **SSH to manager-1 and check RKE2 status:**
+   ```bash
+   ssh -i ~/.ssh/id_rsa ubuntu@192.168.1.100
+   sudo systemctl status rke2-server
+   sudo systemctl start rke2-server  # if not running
+   ```
+
+2. **Wait for RKE2 to fully start:**
+   ```bash
+   # RKE2 may take 2-3 minutes to fully initialize
+   watch -n 5 'sudo ls -la /var/lib/rancher/rke2/server/node-token 2>/dev/null || echo "Token not ready"'
+   ```
+
+3. **Check installation succeeded:**
+   ```bash
+   sudo journalctl -u rke2-server -n 50 | grep -E "INFO|ERROR|WARN"
+   ```
+
+4. **Verify kubeconfig exists:**
+   ```bash
+   sudo ls -la /etc/rancher/rke2/rke2.yaml
+   ```
+
+## Kubernetes/Rancher Issues
+
+### Issue: RKE2 cluster is not operational
+
 ### Issue: Kubernetes cluster not coming up
 
 **Solutions:**

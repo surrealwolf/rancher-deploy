@@ -41,27 +41,37 @@ cp terraform.tfvars.example terraform.tfvars
 
 Edit `terraform.tfvars` with your values:
 ```hcl
-proxmox_api_url = "https://pve.example.com:8006/api2/json"
-proxmox_api_user = "root@pam"
-proxmox_api_token_id = "terraform-token"
+proxmox_api_url          = "https://pve.example.com:8006/api2/json"
+proxmox_api_user         = "root@pam"
+proxmox_api_token_id     = "terraform-token"
 proxmox_api_token_secret = "your-secret-token"
-proxmox_node = "pve"
-rancher_hostname = "rancher.example.com"
-rancher_password = "your-secure-password"
+proxmox_node             = "pve"
+rke2_version             = "v1.34.3+rke2r1"  # IMPORTANT: use actual version, not "latest"
+rancher_hostname         = "rancher.example.com"
+rancher_password         = "your-secure-password"
 ```
 
 See [docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md) for all options.
 
 ### 2. Deploy Infrastructure + Kubernetes + Rancher
 
+From the root directory:
+
 ```bash
-# Verify configuration
+# Deploy with automatic logging (recommended)
+./apply.sh -auto-approve
+
+# Or manually from terraform directory
+cd terraform
 terraform init
 terraform plan
-
-# Deploy (takes 30-45 minutes including RKE2 installation and Rancher setup)
-terraform apply
+terraform apply -auto-approve
 ```
+
+**⚠️ Critical: RKE2 Version**
+- Use specific released version: `v1.34.3+rke2r1`
+- Do NOT use `"latest"` - it will fail (not a downloadable release)
+- Check available versions at https://github.com/rancher/rke2/tags
 
 ### 3. Verify Deployment
 
@@ -69,7 +79,7 @@ terraform apply
 # Check manager Kubernetes cluster
 export KUBECONFIG=~/.kube/rancher-manager.yaml
 kubectl get nodes
-kubectl get pods -n cattle-system
+kubectl get pods -n kube-system
 
 # Access Rancher
 terraform output rancher_url
@@ -87,34 +97,41 @@ terraform output rancher_url
 - **[docs/TFVARS_SETUP.md](docs/TFVARS_SETUP.md)** - Setup instructions
 - **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
+## Documentation
+
+- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough with logging
+- **[docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md)** - Variable reference and configuration
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions (including RKE2 version fix)
+- **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning details
+- **[docs/TFVARS_SETUP.md](docs/TFVARS_SETUP.md)** - Setup instructions
+- **[docs/RANCHER_DEPLOYMENT.md](docs/RANCHER_DEPLOYMENT.md)** - Rancher deployment automation
+
 ## Project Structure
 
 ```
 .
+├── apply.sh                      # Deploy with automatic logging (ROOT)
+├── README.md                     # This file
 ├── docs/                         # Documentation
-│   ├── CLOUD_IMAGE_SETUP.md     # Cloud image provisioning
+│   ├── DEPLOYMENT_GUIDE.md      # Complete deployment guide
+│   ├── TROUBLESHOOTING.md       # Issue resolution (includes RKE2 fixes)
 │   ├── TERRAFORM_VARIABLES.md   # Variable reference
+│   ├── CLOUD_IMAGE_SETUP.md     # Cloud image provisioning
 │   ├── TFVARS_SETUP.md          # Setup instructions
-│   └── TROUBLESHOOTING.md       # Troubleshooting guide
+│   └── RANCHER_DEPLOYMENT.md    # Rancher deployment
 ├── terraform/                    # Terraform configuration
 │   ├── main.tf                  # Cluster module instantiation
-│   ├── provider.tf              # bpg/proxmox provider config
+│   ├── provider.tf              # bpg/proxmox provider config with logging
 │   ├── variables.tf             # Variable definitions
 │   ├── outputs.tf               # Output values
 │   ├── terraform.tfvars         # Environment config (not in git)
 │   ├── terraform.tfvars.example # Config template
-│   ├── modules/
-│   │   └── proxmox_vm/          # Reusable VM module
-│   └── environments/            # Legacy environment configs
-├── TERRAFORM_SETUP.md           # Terraform guide
-├── DEPLOYMENT_SUMMARY.md        # Deployment record
-├── README.md                    # This file
-├── Makefile                     # Build automation
-└── .gitignore                   # Git ignore rules
-│   └── setup.sh
-├── .github/                 # GitHub configuration
-│   └── copilot-instructions.md
-└── README.md                # This file
+│   └── modules/
+│       ├── proxmox_vm/          # VM creation module
+│       └── rke2_cluster/        # RKE2 installation module
+├── .github/                      # GitHub configuration
+│   └── copilot-instructions.md  # AI assistant guidelines
+└── .gitignore                    # Git ignore rules
 ```
 
 ## Key Features
