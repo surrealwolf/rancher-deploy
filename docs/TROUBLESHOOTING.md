@@ -13,10 +13,9 @@ Error: Failed to query available provider packages...
 
 **Solution:**
 1. Verify internet connectivity
-2. Check provider source is correct: `dataknife/pve`
-3. Ensure Terraform version >= 1.0
-4. Clear cache: `rm -rf .terraform`
-5. Retry `terraform init`
+2. Ensure Terraform version >= 1.0
+3. Clear cache: `rm -rf .terraform`
+4. Retry `terraform init`
 
 ### Issue: Terraform plan shows no changes but nothing deployed
 

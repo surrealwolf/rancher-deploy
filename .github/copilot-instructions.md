@@ -85,7 +85,7 @@ Infrastructure-as-code using Terraform:
 - **Explicit dependencies**: Use `depends_on` to control deployment order (apps waits for manager)
 
 #### Resource Naming
-- **Provider resources**: `pve_qemu` (from dataknife/pve provider)
+- **Provider resources**: `proxmox_virtual_environment_vm` (from bpg/proxmox)
 - **Terraform variables**: snake_case (e.g., `proxmox_api_url`)
 - **Terraform outputs**: snake_case (e.g., `rancher_manager_ip`)
 - **Local values**: snake_case (e.g., `vm_tags`)

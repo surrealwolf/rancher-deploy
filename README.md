@@ -138,11 +138,11 @@ terraform output rancher_url
 
 ### Reliable VM Creation
 
-The deployment uses the **dataknife/pve Terraform provider** (v1.0.0) with:
+The deployment uses the **bpg/proxmox Terraform provider** (v0.90) with:
 - ✅ Exponential backoff retry logic for API calls
 - ✅ Proper task completion verification
 - ✅ Comprehensive error handling
-- ✅ Configurable debug logging (PROXMOX_LOG_LEVEL)
+- ✅ Full Proxmox VE 8.x and 9.x support
 
 ### Automated Configuration
 
@@ -273,21 +273,19 @@ Deployment timing (typical):
 
 ## Provider Information
 
-**Terraform Provider**: dataknife/pve v1.0.0
+**Terraform Provider**: bpg/proxmox v0.90.0
 
-**Improvements over older providers:**
-- ✅ Reliable task polling with proper retry logic
+**Features:**
+- ✅ Reliable task polling with exponential backoff retry
 - ✅ Better error messages and diagnostics
-- ✅ Full Proxmox VE 9.x support
+- ✅ Full Proxmox VE 8.x and 9.x support
 - ✅ Improved cloud-init integration
-- ✅ Configurable logging for debugging
-
-**Previous Provider**: telmate/proxmox (deprecated)
+- ✅ Active community (1.7K+ stars, 130+ contributors)
 
 ## Next Steps
 
-1. **Review Architecture**: [ARCHITECTURE.md](docs/ARCHITECTURE.md)
-2. **Follow Setup Guide**: [GETTING_STARTED.md](docs/GETTING_STARTED.md)
+1. **Review Architecture**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+2. **Follow Deployment Guide**: [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
 3. **Deploy with Terraform**: [TERRAFORM_GUIDE.md](docs/TERRAFORM_GUIDE.md)
 4. **Install Kubernetes**: Set up K3s on deployed nodes
 5. **Install Rancher**: Deploy Rancher on manager cluster
