@@ -281,30 +281,9 @@ module "nprd_apps_additional" {
 }
 
 # ============================================================================
-# NPRD APPS CLUSTER - VERIFICATION
-# Waits for all apps nodes to be ready
-# ============================================================================
-
-module "rke2_apps" {
-  source = "./modules/rke2_downstream_cluster"
-
-  cluster_name         = "nprd-apps"
-  agent_ips            = concat(
-    [split("/", module.nprd_apps_primary.ip_address)[0]],
-    [for node in module.nprd_apps_additional : split("/", node.ip_address)[0]]
-  )
-  ssh_private_key_path = var.ssh_private_key
-  ssh_user             = "ubuntu"
-
-  depends_on = [
-    module.nprd_apps_primary,
-    module.nprd_apps_additional
-  ]
-}
-
-# ============================================================================
 # RANCHER DEPLOYMENT - ON MANAGER CLUSTER ONLY
 # Installs cert-manager and Rancher via Helm after manager cluster is ready
+# Must complete before apps cluster deployment so it can register with Rancher
 # ============================================================================
 
 module "rancher_deployment" {
@@ -320,5 +299,29 @@ module "rancher_deployment" {
 
   depends_on = [
     module.rke2_manager
+  ]
+}
+
+# ============================================================================
+# NPRD APPS CLUSTER - VERIFICATION
+# Waits for all apps nodes to be ready
+# Only starts after Rancher is deployed on manager cluster
+# ============================================================================
+
+module "rke2_apps" {
+  source = "./modules/rke2_downstream_cluster"
+
+  cluster_name         = "nprd-apps"
+  agent_ips            = concat(
+    [split("/", module.nprd_apps_primary.ip_address)[0]],
+    [for node in module.nprd_apps_additional : split("/", node.ip_address)[0]]
+  )
+  ssh_private_key_path = var.ssh_private_key
+  ssh_user             = "ubuntu"
+
+  depends_on = [
+    module.nprd_apps_primary,
+    module.nprd_apps_additional,
+    module.rancher_deployment  # Wait for Rancher to be deployed first
   ]
 }
