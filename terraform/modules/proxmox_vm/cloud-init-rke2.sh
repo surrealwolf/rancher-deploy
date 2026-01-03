@@ -118,6 +118,29 @@ if [ -n "${SERVER_IP}" ] && [ "${SERVER_IP}" != "" ]; then
     exit 1
   fi
   log "Secondary server detected. Joining existing RKE2 cluster at ${SERVER_IP}..."
+  
+  # CRITICAL: Wait for primary API to be responsive before joining
+  log "Waiting for primary RKE2 API (${SERVER_IP}:6443) to be ready..."
+  API_READY=0
+  for i in {1..120}; do
+    if timeout 5 curl -sk https://"${SERVER_IP}":6443/healthz >/dev/null 2>&1; then
+      log "✓ Primary API is healthy at attempt $i"
+      API_READY=1
+      break
+    fi
+    if [ $((i % 10)) -eq 0 ] || [ $i -le 3 ]; then
+      log "  Primary API check attempt $i/120..."
+    fi
+    sleep 5
+  done
+  
+  if [ $API_READY -eq 0 ]; then
+    log "✗ ERROR: Primary API did not become ready after 10 minutes"
+    log "ℹ Verify primary RKE2 server is running: systemctl status rke2-server on ${SERVER_IP}"
+    log "ℹ Check primary logs: journalctl -u rke2-server on ${SERVER_IP}"
+    exit 1
+  fi
+  
   export RKE2_URL="https://${SERVER_IP}:6443"
   export RKE2_TOKEN="${SERVER_TOKEN}"
 else
