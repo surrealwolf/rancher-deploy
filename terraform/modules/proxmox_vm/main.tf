@@ -137,10 +137,12 @@ output "hostname" {
 # Create VM from pre-downloaded cloud image
 # Image is already downloaded at root level and passed via variables
 resource "proxmox_virtual_environment_vm" "vm" {
-  vm_id           = var.vm_id
-  name            = var.vm_name
-  node_name       = var.proxmox_node
-  stop_on_destroy = true
+  vm_id                              = var.vm_id
+  name                               = var.vm_name
+  node_name                          = var.proxmox_node
+  stop_on_destroy                    = true
+  delete_unreferenced_disks_on_destroy = false
+  purge_on_destroy                   = false
 
   cpu {
     cores   = var.cpu_cores

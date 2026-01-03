@@ -57,24 +57,27 @@ echo ""
 wait $DESTROY_PID
 DESTROY_EXIT=$?
 
+# Always clean up local files, even if destroy had errors
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "Cleanup: Removing local files..."
+echo "───────────────────────────────────────────────────────────"
+
+# Clean up token files
+rm -fv /home/lee/git/rancher-deploy/terraform/.manager-token 2>/dev/null || true
+
+# Clean up kubeconfig
+rm -fv ~/.kube/rancher-manager.yaml 2>/dev/null || true
+
+echo "═══════════════════════════════════════════════════════════"
+
 if [ $DESTROY_EXIT -eq 0 ]; then
-  echo ""
-  echo "═══════════════════════════════════════════════════════════"
-  echo "Cleanup: Removing local files..."
-  echo "───────────────────────────────────────────────────────────"
-  
-  # Clean up token files
-  rm -fv /home/lee/git/rancher-deploy/terraform/.manager-token 2>/dev/null || true
-  
-  # Clean up kubeconfig
-  rm -fv ~/.kube/rancher-manager.yaml 2>/dev/null || true
-  
-  echo "═══════════════════════════════════════════════════════════"
   echo "✓ Infrastructure destroyed successfully"
   echo "═══════════════════════════════════════════════════════════"
 else
-  echo ""
-  echo "⚠️  Destroy failed with exit code $DESTROY_EXIT"
-  echo "Check logs for details: terraform/$LOG_FILE"
+  echo "⚠️  Destroy completed with errors (exit code $DESTROY_EXIT)"
+  echo "VMs may still exist on Proxmox - check logs for details:"
+  echo "  tail -f $LOG_FILE"
+  echo "═══════════════════════════════════════════════════════════"
   exit $DESTROY_EXIT
 fi
