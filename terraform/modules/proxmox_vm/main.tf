@@ -112,7 +112,11 @@ variable "is_rke2_server" {
   type        = bool
   default     = false
 }
-
+variable "rke2_is_primary" {
+  description = "Whether this is a primary/first RKE2 server node in the cluster"
+  type        = bool
+  default     = false
+}
 output "vm_id" {
   value = proxmox_virtual_environment_vm.vm.vm_id
 }
@@ -130,10 +134,10 @@ output "hostname" {
 # The image is then imported into the VM datastore via the disk block's import_from parameter
 resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
   content_type        = "import"
-  datastore_id        = "images-import" # File-based storage configured for cloud image imports
+  datastore_id        = "images-import"
   node_name           = var.proxmox_node
   url                 = var.cloud_image_url
-  file_name           = "ubuntu-noble-cloudimg-amd64.qcow2" # Same filename for all VMs (shared image)
+  file_name           = "ubuntu-noble-cloudimg-amd64.qcow2"
   overwrite           = true
   overwrite_unmanaged = true
 }

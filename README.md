@@ -90,19 +90,12 @@ terraform output rancher_url
 
 ## Documentation
 
-- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough with logging
-- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions (including RKE2 version fix)
-- **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning details
-- **[docs/MODULES_AND_AUTOMATION.md](docs/MODULES_AND_AUTOMATION.md)** - Terraform modules and RKE2/Rancher automation
-
-## Documentation
+Core documentation for deployment and troubleshooting:
 
 - **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough with logging
-- **[docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md)** - Variable reference and configuration
-- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions (including RKE2 version fix)
-- **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning details
-- **[docs/TFVARS_SETUP.md](docs/TFVARS_SETUP.md)** - Setup instructions
-- **[docs/RANCHER_DEPLOYMENT.md](docs/RANCHER_DEPLOYMENT.md)** - Rancher deployment automation
+- **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning and VM configuration
+- **[docs/MODULES_AND_AUTOMATION.md](docs/MODULES_AND_AUTOMATION.md)** - Terraform modules, variables, and automation details
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## Project Structure
 
@@ -110,27 +103,26 @@ terraform output rancher_url
 .
 ├── apply.sh                      # Deploy with automatic logging (ROOT)
 ├── README.md                     # This file
-├── docs/                         # Documentation
-│   ├── DEPLOYMENT_GUIDE.md      # Complete deployment guide
-│   ├── TROUBLESHOOTING.md       # Issue resolution (includes RKE2 fixes)
-│   ├── TERRAFORM_VARIABLES.md   # Variable reference
-│   ├── CLOUD_IMAGE_SETUP.md     # Cloud image provisioning
-│   ├── TFVARS_SETUP.md          # Setup instructions
-│   └── RANCHER_DEPLOYMENT.md    # Rancher deployment
-├── terraform/                    # Terraform configuration
-│   ├── main.tf                  # Cluster module instantiation
-│   ├── provider.tf              # bpg/proxmox provider config with logging
-│   ├── variables.tf             # Variable definitions
-│   ├── outputs.tf               # Output values
-│   ├── terraform.tfvars         # Environment config (not in git)
-│   ├── terraform.tfvars.example # Config template
-│   └── modules/
-│       ├── proxmox_vm/          # VM creation module
-│       ├── rke2_manager_cluster/    # RKE2 manager cluster (3-node HA control plane)
-│       └── rke2_downstream_cluster/ # RKE2 agent-only clusters
-├── .github/                      # GitHub configuration
-│   └── copilot-instructions.md  # AI assistant guidelines
-└── .gitignore                    # Git ignore rules
+├── CHANGELOG.md                  # Version history and major changes
+├── CODE_OF_CONDUCT.md            # Community guidelines
+├── CONTRIBUTING.md               # Development guidelines
+├── docs/                         # Core documentation
+│   ├── DEPLOYMENT_GUIDE.md       # Complete deployment walkthrough
+│   ├── CLOUD_IMAGE_SETUP.md      # Cloud image provisioning
+│   ├── MODULES_AND_AUTOMATION.md # Terraform modules and variables
+│   └── TROUBLESHOOTING.md        # Issue resolution
+└── terraform/                    # Terraform configuration
+    ├── main.tf                   # Manager and apps cluster definitions
+    ├── provider.tf               # bpg/proxmox provider config
+    ├── variables.tf              # Variable definitions
+    ├── outputs.tf                # Output values
+    ├── terraform.tfvars          # Environment config (not in git)
+    ├── terraform.tfvars.example  # Config template
+    ├── fetch-token.sh            # RKE2 token fetching script
+    └── modules/
+        ├── proxmox_vm/           # VM creation and RKE2 provisioning
+        ├── rke2_manager_cluster/ # Manager cluster verification
+        └── rke2_downstream_cluster/ # Apps cluster verification
 ```
 
 ## Key Features

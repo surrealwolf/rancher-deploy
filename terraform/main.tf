@@ -1,13 +1,82 @@
-module "rancher_manager" {
+# ============================================================================
+# RANCHER MANAGER CLUSTER - PRIMARY NODE (manager-1)
+# Builds first, initializes RKE2, generates cluster token
+# ============================================================================
+
+module "rancher_manager_primary" {
+  source = "./modules/proxmox_vm"
+
+  vm_name         = "rancher-manager-1"
+  vm_id           = 401
+  proxmox_node    = var.proxmox_node
+  cloud_image_url = var.ubuntu_cloud_image_url
+  datastore_id    = var.clusters["manager"].storage
+
+  cpu_cores    = var.clusters["manager"].cpu_cores
+  memory_mb    = var.clusters["manager"].memory_mb
+  disk_size_gb = var.clusters["manager"].disk_size_gb
+
+  hostname    = "rancher-manager-1"
+  ip_address  = "${var.clusters["manager"].ip_subnet}.${var.clusters["manager"].ip_start_octet}/24"
+  gateway     = var.clusters["manager"].gateway
+  dns_servers = var.clusters["manager"].dns_servers
+  domain      = var.clusters["manager"].domain
+  vlan_id     = 14
+
+  ssh_private_key = var.ssh_private_key
+
+  # RKE2 configuration - primary server (standalone, generates token)
+  rke2_enabled       = true
+  rke2_version       = "v1.34.3+rke2r1"
+  is_rke2_server     = true
+  rke2_is_primary    = true  # NEW: marks this as primary node
+  rke2_server_token  = ""    # Primary generates its own token
+  rke2_server_ip     = ""    # No upstream server for primary
+}
+
+# ============================================================================
+# MANAGER CLUSTER - FETCH TOKEN FROM PRIMARY
+# Fetches RKE2 token from primary node and stores locally
+# ============================================================================
+
+locals {
+  manager_primary_ip = split("/", module.rancher_manager_primary.ip_address)[0]
+  manager_token_file = "${path.module}/.manager-token"
+}
+
+resource "null_resource" "fetch_manager_token" {
+  provisioner "local-exec" {
+    command = "bash ${path.module}/fetch-token.sh ${var.ssh_private_key} ${local.manager_primary_ip} ${local.manager_token_file}"
+  }
+
+  depends_on = [
+    module.rancher_manager_primary
+  ]
+}
+
+# Read the token back from file
+data "local_file" "manager_token" {
+  filename = local.manager_token_file
+  depends_on = [
+    null_resource.fetch_manager_token
+  ]
+}
+
+# ============================================================================
+# RANCHER MANAGER CLUSTER - SECONDARY NODES (manager-2, manager-3)
+# Only builds after primary is ready and token is fetched
+# ============================================================================
+
+module "rancher_manager_additional" {
   source = "./modules/proxmox_vm"
 
   for_each = {
-    for i in range(var.clusters["manager"].node_count) :
+    for i in range(1, var.clusters["manager"].node_count) :
     "manager-${i + 1}" => {
-      vm_id      = 401 + i
-      hostname   = "rancher-manager-${i + 1}"
-      ip_address = "${var.clusters["manager"].ip_subnet}.${var.clusters["manager"].ip_start_octet + i}/24"
-      is_first   = (i == 0)
+      vm_id          = 401 + i
+      hostname       = "rancher-manager-${i + 1}"
+      ip_address     = "${var.clusters["manager"].ip_subnet}.${var.clusters["manager"].ip_start_octet + i}/24"
+      node_index     = i
     }
   }
 
@@ -30,26 +99,127 @@ module "rancher_manager" {
 
   ssh_private_key = var.ssh_private_key
 
-  # RKE2 configuration for manager cluster
-  rke2_enabled   = true
-  rke2_version   = "v1.34.3+rke2r1"
-  is_rke2_server = true
+  # RKE2 configuration - secondary servers (join primary's cluster)
+  rke2_enabled       = true
+  rke2_version       = "v1.34.3+rke2r1"
+  is_rke2_server     = true
+  rke2_is_primary    = false  # NEW: marks this as secondary node
+  rke2_server_token  = trimspace(data.local_file.manager_token.content)  # Token fetched locally from primary
+  rke2_server_ip     = local.manager_primary_ip  # Primary IP
 
-  # First server (manager-1) starts standalone
-  # Secondary servers (manager-2, manager-3) will fetch token from manager-1 at runtime
-  rke2_server_token = ""
-  rke2_server_ip    = each.value.is_first ? "" : "192.168.14.100" # IP of manager-1
+  # CRITICAL: Only build after primary is ready AND token is fetched
+  depends_on = [
+    module.rancher_manager_primary,
+    data.local_file.manager_token
+  ]
 }
 
-module "nprd_apps" {
+# ============================================================================
+# MANAGER CLUSTER - VERIFICATION & KUBECONFIG
+# Waits for all manager nodes to be ready, retrieves kubeconfig
+# ============================================================================
+
+module "rke2_manager" {
+  source = "./modules/rke2_manager_cluster"
+
+  cluster_name         = "rancher-manager"
+  server_ips           = concat(
+    [split("/", module.rancher_manager_primary.ip_address)[0]],
+    [for node in module.rancher_manager_additional : split("/", node.ip_address)[0]]
+  )
+  ssh_private_key_path = var.ssh_private_key
+  ssh_user             = "ubuntu"
+
+  depends_on = [
+    module.rancher_manager_primary,
+    module.rancher_manager_additional
+  ]
+}
+
+# ============================================================================
+# NPRD APPS CLUSTER - FETCH TOKEN FROM PRIMARY
+# Fetches RKE2 token from apps primary node and stores locally
+# ============================================================================
+
+locals {
+  apps_primary_ip = split("/", module.nprd_apps_primary.ip_address)[0]
+  apps_token_file = "${path.module}/.apps-token"
+}
+
+resource "null_resource" "fetch_apps_token" {
+  provisioner "local-exec" {
+    command = "bash ${path.module}/fetch-token.sh ${var.ssh_private_key} ${local.apps_primary_ip} ${local.apps_token_file}"
+  }
+
+  depends_on = [
+    module.nprd_apps_primary
+  ]
+}
+
+# Read the apps token back from file
+data "local_file" "apps_token" {
+  filename = local.apps_token_file
+  depends_on = [
+    null_resource.fetch_apps_token
+  ]
+}
+
+# ============================================================================
+# NPRD APPS CLUSTER - PRIMARY NODE (apps-1)
+# Only builds after manager cluster is ready
+# ============================================================================
+
+module "nprd_apps_primary" {
+  source = "./modules/proxmox_vm"
+
+  vm_name         = "nprd-apps-1"
+  vm_id           = 404
+  proxmox_node    = var.proxmox_node
+  cloud_image_url = var.ubuntu_cloud_image_url
+  datastore_id    = var.clusters["nprd-apps"].storage
+
+  cpu_cores    = var.clusters["nprd-apps"].cpu_cores
+  memory_mb    = var.clusters["nprd-apps"].memory_mb
+  disk_size_gb = var.clusters["nprd-apps"].disk_size_gb
+
+  hostname    = "nprd-apps-1"
+  ip_address  = "${var.clusters["nprd-apps"].ip_subnet}.${var.clusters["nprd-apps"].ip_start_octet}/24"
+  gateway     = var.clusters["nprd-apps"].gateway
+  dns_servers = var.clusters["nprd-apps"].dns_servers
+  domain      = var.clusters["nprd-apps"].domain
+  vlan_id     = 14
+
+  ssh_private_key = var.ssh_private_key
+
+  # RKE2 configuration - apps primary server
+  rke2_enabled       = true
+  rke2_version       = "v1.34.3+rke2r1"
+  is_rke2_server     = true
+  rke2_is_primary    = true
+  rke2_server_token  = ""
+  rke2_server_ip     = ""
+
+  # CRITICAL: Only build after manager cluster is fully ready
+  depends_on = [
+    module.rke2_manager
+  ]
+}
+
+# ============================================================================
+# NPRD APPS CLUSTER - SECONDARY NODES (apps-2, apps-3)
+# Only builds after apps primary is ready
+# ============================================================================
+
+module "nprd_apps_additional" {
   source = "./modules/proxmox_vm"
 
   for_each = {
-    for i in range(var.clusters["nprd-apps"].node_count) :
+    for i in range(1, var.clusters["nprd-apps"].node_count) :
     "nprd-apps-${i + 1}" => {
-      vm_id      = 404 + i
-      hostname   = "nprd-apps-${i + 1}"
-      ip_address = "${var.clusters["nprd-apps"].ip_subnet}.${var.clusters["nprd-apps"].ip_start_octet + i}/24"
+      vm_id          = 404 + i
+      hostname       = "nprd-apps-${i + 1}"
+      ip_address     = "${var.clusters["nprd-apps"].ip_subnet}.${var.clusters["nprd-apps"].ip_start_octet + i}/24"
+      node_index     = i
     }
   }
 
@@ -72,87 +242,38 @@ module "nprd_apps" {
 
   ssh_private_key = var.ssh_private_key
 
-  # RKE2 configuration for apps cluster (agents)
-  rke2_enabled      = true
-  rke2_version      = "v1.34.3+rke2r1"
-  is_rke2_server    = false # Apps cluster nodes are agents
-  rke2_server_ip    = split("/", module.rancher_manager["manager-1"].ip_address)[0]
-  rke2_server_token = "dummy-token-will-be-set-by-cloud-init" # Will be retrieved by cloud-init
+  # RKE2 configuration - apps secondary servers
+  rke2_enabled       = true
+  rke2_version       = "v1.34.3+rke2r1"
+  is_rke2_server     = true
+  rke2_is_primary    = false
+  rke2_server_token  = trimspace(data.local_file.apps_token.content)  # Token fetched locally from apps primary
+  rke2_server_ip     = local.apps_primary_ip
 
-  # Wait for manager nodes to complete before creating nprd-apps nodes
-  depends_on = [module.rancher_manager, module.rke2_manager]
+  depends_on = [
+    module.nprd_apps_primary,
+    data.local_file.apps_token
+  ]
 }
 
-# Deploy RKE2 on manager cluster
-# Uses rke2_manager_cluster module for 3-node HA control plane setup
-# Handles: primary server startup, secondary server joining, kubeconfig retrieval
-module "rke2_manager" {
-  source = "./modules/rke2_manager_cluster"
+# ============================================================================
+# NPRD APPS CLUSTER - VERIFICATION
+# Waits for all apps nodes to be ready
+# ============================================================================
 
-  cluster_name         = "rancher-manager"
-  server_ips           = [for vm in module.rancher_manager : split("/", vm.ip_address)[0]]
-  ssh_private_key_path = pathexpand(var.ssh_private_key)
-  ssh_user             = "ubuntu"
-
-  depends_on = [module.rancher_manager]
-}
-
-# Deploy RKE2 on apps cluster
-# Uses rke2_downstream_cluster module for agent-only nodes
-# Handles: agent verification, no kubeconfig retrieval (no API server)
 module "rke2_apps" {
   source = "./modules/rke2_downstream_cluster"
 
   cluster_name         = "nprd-apps"
-  agent_ips            = [for vm in module.nprd_apps : split("/", vm.ip_address)[0]]
-  ssh_private_key_path = pathexpand(var.ssh_private_key)
+  agent_ips            = concat(
+    [split("/", module.nprd_apps_primary.ip_address)[0]],
+    [for node in module.nprd_apps_additional : split("/", node.ip_address)[0]]
+  )
+  ssh_private_key_path = var.ssh_private_key
   ssh_user             = "ubuntu"
 
-  depends_on = [module.nprd_apps, module.rke2_manager]
-}
-
-# Deploy Rancher on manager cluster
-# Enable by setting deploy_rancher = true in terraform.tfvars or via -var flag
-# This will only run after RKE2 is deployed and kubeconfig is available
-module "rancher_deployment" {
-  source = "./modules/rancher_cluster"
-
-  cluster_name     = "rancher-manager"
-  node_count       = var.clusters["manager"].node_count
-  kubeconfig_path  = pathexpand("~/.kube/rancher-manager.yaml")
-  install_rancher  = var.deploy_rancher
-  rancher_version  = var.rancher_version
-  rancher_password = var.rancher_password
-  rancher_hostname = var.rancher_hostname
-}
-
-# Create local kubeconfig files for each cluster
-locals {
-  manager_hosts   = [for vm in module.rancher_manager : split("/", vm.ip_address)[0]]
-  nprd_apps_hosts = [for vm in module.nprd_apps : split("/", vm.ip_address)[0]]
-}
-
-output "cluster_ips" {
-  value = {
-    manager   = local.manager_hosts
-    nprd_apps = local.nprd_apps_hosts
-  }
-}
-
-output "rancher_url" {
-  description = "Rancher URL"
-  value       = "https://${var.rancher_hostname}"
-}
-
-output "kubeconfig_paths" {
-  value = {
-    manager   = module.rke2_manager.kubeconfig_path
-    # Apps cluster has no kubeconfig (agent-only, no API server)
-  }
-}
-
-output "rancher_admin_password" {
-  description = "Rancher admin password (from tfvars)"
-  value       = "Use the password from rancher_password variable"
-  sensitive   = true
+  depends_on = [
+    module.nprd_apps_primary,
+    module.nprd_apps_additional
+  ]
 }

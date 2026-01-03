@@ -146,86 +146,145 @@ Installing RKE2 server v1.34.3+rke2r1...
 
 ### RKE2 Provisioning Timeout Fix - Non-Blocking Installation (Jan 2, 2026)
 
-**Issue**: Provisioner script was timing out waiting for RKE2 services to become fully operational before exiting
+**CRITICAL FIX (Jan 3, 2026): Sequential Node Provisioning**
 
-**Root Cause**: The script contained blocking waits (60 attempts, ~120 seconds each) for:
-1. RKE2 service to become active
-2. Token file to be created
+**Problem (Confirmed in Live Deployment)**:
+Current parallel deployment causes HA cluster formation failure:
+- All 3 manager nodes (1, 2, 3) created simultaneously
+- Secondary nodes (2, 3) try to fetch token from primary (1) **before it exists**
+- RKE2 service startup takes 2-3 minutes, token appears even later
+- Secondary nodes timeout after 1-60 seconds and install as **standalone nodes**
+- Result: 3 broken single-node clusters instead of 1 HA cluster
 
-These waits could exceed the provisioner connection timeout, causing `remote-exec` provisioner to fail even though RKE2 was installing in the background.
+**Evidence from Deployment**:
+```
+[02:09:24] manager-2: "Secondary server detected but token not provided. Waiting..."
+[02:09:24] manager-3: "Secondary server detected but token not provided. Waiting..."  
+[02:09:26] manager-1: "✓ RKE2 server installation complete"
+[02:10:45] manager-3: "Waiting for token from 192.168.14.100... attempt 60/60"
+[02:10:46] manager-3: "⚠ Could not fetch token from first server, installing as standalone"
+```
 
-**Solution Implemented**:
-Changed from blocking to non-blocking approach:
-1. **Removed service startup waits**: Script now exits successfully after running installer
-2. **Increased provisioner timeout**: From `10m` to `30m` in terraform config
-3. **Added helpful messages**: Notes that services will start automatically
+Manager-1 didn't complete until 02:09:26, but secondary nodes started trying to fetch at 02:09:24.
 
-**Before (Blocking)**:
+**Solution: Sequential Node Provisioning**
+
+Restructured Terraform modules to enforce strict ordering:
+
+1. **Stage 1: Primary Nodes** - Create primary node for each cluster, let it fully initialize
+2. **Stage 2: Secondary Nodes** - Only create secondaries AFTER primary's token exists (verified)
+3. **Stage 3: Verification** - Confirm all nodes in cluster are ready
+4. **Stage 4: Next Cluster** - Only start dependent clusters after upstream is ready
+
+**Module Structure**:
+```hcl
+# Manager cluster
+module "rancher_manager_primary" { }              # Stage 1
+module "rancher_manager_additional" {             # Stage 2
+  depends_on = [rancher_manager_primary]
+}
+module "rke2_manager" { }                         # Stage 3 - Verification
+  depends_on = [rancher_manager_primary, rancher_manager_additional]
+
+# Apps cluster (only after manager verified)
+module "nprd_apps_primary" { }                    # Stage 4
+  depends_on = [rke2_manager]
+module "nprd_apps_additional" { }                 # Stage 5
+  depends_on = [nprd_apps_primary]
+module "rke2_apps" { }                            # Stage 6 - Verification
+```
+
+**Cloud-Init Changes**:
+- Increased token wait from 60 retries (1 min) to 300 retries with 2-sec sleep (10 min total)
+- **Changed behavior: FAIL if token not found** instead of "installing as standalone"
+- Increased retry interval from 1 second to 2 seconds (reduces SSH connection spam)
+- Clear error messages showing where to check primary node status
+
+**Token Wait Logic**:
 ```bash
-log "Waiting for RKE2 server to start..."
+# Before: 60 × 1 second = 1 minute
 for i in {1..60}; do
-  if systemctl is-active --quiet rke2-server; then
-    log "✓ RKE2 server is running"
+  if token=$(ssh ... cat /var/lib/rancher/rke2/server/node-token); then
     break
+  fi
+  sleep 1
+done
+# Falls back to: "installing as standalone" ← PROBLEM
+
+# After: 300 × 2 seconds = 10 minutes
+for i in {1..300}; do
+  if token=$(ssh ... cat /var/lib/rancher/rke2/server/node-token); then
+    TOKEN_FOUND=1; break
   fi
   sleep 2
 done
-
-if [ ! -f /var/lib/rancher/rke2/server/node-token ]; then
-  log "✗ Token file not found"
-  exit 1
+if [ $TOKEN_FOUND -eq 0 ]; then
+  exit 1  # FAIL loudly instead of falling back
 fi
 ```
 
-**After (Non-Blocking)**:
+**Why 10 Minutes?**
+- RKE2 service startup: ~60-90 seconds
+- etcd initialization: ~30-45 seconds  
+- Kubernetes API readiness: ~30-45 seconds
+- Total before token file appears: ~2-3 minutes
+- **10-minute timeout = 7-8 minutes safety margin**
+
+**Timeline Comparison**:
+
+Original (Parallel):
+```
+T=0:00   All 6 VMs created simultaneously
+T=1:00   All 6 boot, SSH available
+T=1:30   All 6 start RKE2 installation
+T=2:00   manager-1 completes, token appears
+         manager-2,3 already gave up (timeout)
+         All 6 nodes are now standalone ✗
+T=15+    Terraform finish time
+```
+
+New (Sequential):
+```
+T=0:00   manager-1 VM created
+T=1:00   manager-1 boots, SSH available
+T=1:30   manager-1 RKE2 installation starts
+T=3:30   manager-1 RKE2 complete, token ready ✓
+T=3:30   manager-2, manager-3 VMs created
+T=4:30   manager-2, manager-3 boot, SSH available
+T=5:00   manager-2, manager-3 start RKE2, immediately fetch token ✓
+T=6:00   Manager cluster verified (all 3 nodes joined) ✓
+T=6:00   apps-1 VM created
+T=7:30   apps-1 RKE2 complete, token ready ✓
+T=8:00   apps-2, apps-3 VMs created, RKE2 starts, joins ✓
+T=12:00  Terraform complete with proper HA clusters ✓
+```
+
+**Longer wall-clock time (~25-30 min vs 15-20 min) BUT results in working clusters.**
+
+**Files Changed**:
+- `terraform/main.tf` - Complete restructuring with 6 modules (primary + additional for each cluster, plus verification)
+- `terraform/outputs.tf` - Updated for new module structure, better cluster info
+- `terraform/modules/proxmox_vm/main.tf` - Added `rke2_is_primary` variable
+- `terraform/modules/proxmox_vm/cloud-init-rke2.sh` - Extended token wait, fail on timeout
+- `docs/SEQUENTIAL_DEPLOYMENT_DESIGN.md` - Detailed design documentation (NEW)
+
+**Testing Verification**:
+After deployment:
 ```bash
-log "RKE2 installation complete. Service will start automatically."
-log "ⓘ Note: RKE2 service may take several minutes to fully initialize"
+# Verify HA formation (should show 3 nodes, not standalone)
+kubectl --kubeconfig=~/.kube/rancher-manager.yaml get nodes
+# Should output:
+# rancher-manager-1   Ready
+# rancher-manager-2   Ready
+# rancher-manager-3   Ready
+
+# Verify secondary joined cluster (not standalone)
+ssh ubuntu@192.168.14.101 'sudo cat /var/lib/rancher/rke2/server/config.yaml' | grep server:
+# Should show: server: https://192.168.14.100:6443
 ```
 
-**Benefits**:
-- ✅ Provisioner completes successfully and returns control faster
-- ✅ RKE2 services start automatically in background
-- ✅ Terraform state is saved even if service startup is slow
-- ✅ Users can manually check status: `systemctl status rke2-server`
-- ✅ No more false provisioner failures
-
-**Terraform Change**:
-```hcl
-# terraform/modules/proxmox_vm/main.tf
-connection {
-  timeout = "30m"  # Increased from "10m"
-}
-```
-
-**Deployment Pattern**:
-```
-1. VM boots (30-50 seconds)
-2. SSH provisioner connects
-3. RKE2 installer runs and completes (~3-5 minutes)
-4. Script exits successfully ✓
-5. Terraform marks VM as complete
-6. RKE2 services start in background (continues for 2-3 minutes)
-7. Services become available without blocking provisioner
-```
-
-**Post-Deployment Verification**:
-```bash
-# Check service status (may take 2-3 minutes after provisioner completes)
-systemctl status rke2-server
-
-# Check if token file exists
-ls -la /var/lib/rancher/rke2/server/node-token
-
-# Verify kubernetes
-KUBECONFIG=/etc/rancher/rke2/rke2.yaml kubectl get nodes
-```
-
-**Key Takeaway**:
-- Provisioners should complete quickly and exit successfully
-- Long-running background services (like RKE2) should start independently
-- Don't block provisioners waiting for service startup
-- Use post-deployment checks instead of blocking waits
+**Key Takeaway**: 
+Sequential provisioning solves HA cluster formation by ensuring primaries are ready before secondaries start, not by hoping parallel deployment timing works out.
 
 ## Project Structure
 

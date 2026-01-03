@@ -74,33 +74,20 @@ log "Installing RKE2 server v${RKE2_VERSION}..."
 
 export INSTALL_RKE2_VERSION="${RKE2_VERSION}"
 
-# If SERVER_IP is provided and not local, join existing cluster
-if [ -n "${SERVER_IP}" ] && [ -n "${SERVER_TOKEN}" ] && [ "${SERVER_TOKEN}" != "" ]; then
+# If SERVER_IP is provided, this is a secondary node joining primary's cluster
+if [ -n "${SERVER_IP}" ] && [ "${SERVER_IP}" != "" ]; then
+  # Secondary node MUST have a token passed from Terraform
+  if [ -z "${SERVER_TOKEN}" ] || [ "${SERVER_TOKEN}" = "" ]; then
+    log "✗ ERROR: Secondary server detected but no token provided by Terraform"
+    log "ℹ Token should be fetched from primary and passed via rke2_server_token variable"
+    log "ℹ Check Terraform logs for token fetch failures"
+    exit 1
+  fi
   log "Secondary server detected. Joining existing RKE2 cluster at ${SERVER_IP}..."
   export RKE2_URL="https://${SERVER_IP}:6443"
   export RKE2_TOKEN="${SERVER_TOKEN}"
-elif [ -n "${SERVER_IP}" ] && [ "${SERVER_IP}" != "" ]; then
-  log "Secondary server detected but token not provided. Waiting for token from first server..."
-  # Wait for first server to be ready and fetch token
-  for i in {1..60}; do
-    if token=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i /tmp/ssh_key ubuntu@"${SERVER_IP}" 'sudo cat /var/lib/rancher/rke2/server/node-token' 2>/dev/null); then
-      if [ -n "$token" ] && [ ${#token} -gt 10 ]; then
-        log "✓ Token received from first server"
-        export RKE2_URL="https://${SERVER_IP}:6443"
-        export RKE2_TOKEN="$token"
-        break
-      fi
-    fi
-    if [ $((i % 10)) -eq 0 ]; then
-      log "Waiting for token from ${SERVER_IP}... attempt $i/60"
-    fi
-    sleep 1
-  done
-  if [ -z "$token" ]; then
-    log "⚠ Could not fetch token from first server, installing as standalone"
-  fi
 else
-  log "Starting new RKE2 server (first node)"
+  log "Starting new RKE2 server (primary node)"
 fi
 
 if ! "$INSTALLER"; then
