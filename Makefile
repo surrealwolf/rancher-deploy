@@ -1,4 +1,4 @@
-.PHONY: help init plan apply destroy destroy-quick validate fmt clean check-prereqs
+.PHONY: help init plan apply destroy destroy-quick validate fmt clean check-prereqs check-rancher-tools
 
 # Terraform directory
 TF_DIR := terraform
@@ -8,7 +8,8 @@ help:
 	@echo "=========================================="
 	@echo ""
 	@echo "Available targets:"
-	@echo "  check-prereqs        - Check for required tools"
+	@echo "  check-prereqs        - Check for required tools (terraform, curl, ssh, jq)"
+	@echo "  check-rancher-tools  - Check for Rancher deployment tools (helm, kubectl)"
 	@echo ""
 	@echo "Terraform Operations:"
 	@echo "  init                 - Initialize Terraform"
@@ -22,15 +23,68 @@ help:
 	@echo "  help                 - Show this help message"
 	@echo ""
 	@echo "Usage:"
-	@echo "  1. make init       - Initialize Terraform"
-	@echo "  2. make plan       - Preview changes"
-	@echo "  3. make apply      - Deploy infrastructure"
+	@echo "  1. make check-prereqs    - Verify tools are installed"
+	@echo "  2. make init             - Initialize Terraform"
+	@echo "  3. make plan             - Preview changes"
+	@echo "  4. make apply            - Deploy infrastructure"
 
 check-prereqs:
 	@echo "Checking prerequisites..."
-	@command -v terraform >/dev/null 2>&1 || { echo "terraform is required"; exit 1; }
-	@command -v curl >/dev/null 2>&1 || { echo "curl is required"; exit 1; }
-	@echo "✓ All required tools found"
+	@echo ""
+	@MISSING_TOOLS=0; \
+	TOOLS="terraform curl ssh jq"; \
+	for tool in $$TOOLS; do \
+	  if ! command -v $$tool >/dev/null 2>&1; then \
+	    echo "✗ $$tool is required but not installed"; \
+	    MISSING_TOOLS=1; \
+	  else \
+	    echo "✓ $$tool found"; \
+	  fi; \
+	done; \
+	if [ $$MISSING_TOOLS -eq 1 ]; then \
+	  echo ""; \
+	  echo "Installation instructions:"; \
+	  echo "  Ubuntu/Debian:"; \
+	  echo "    sudo apt-get update && sudo apt-get install -y curl openssh-client jq"; \
+	  echo "    wget https://apt.releases.hashicorp.com/gpg | sudo apt-key add -"; \
+	  echo "    sudo apt-get install -y terraform"; \
+	  echo "  macOS (with Homebrew):"; \
+	  echo "    brew install terraform curl openssh jq"; \
+	  echo "  Or download directly:"; \
+	  echo "    Terraform: https://www.terraform.io/downloads"; \
+	  exit 1; \
+	fi; \
+	echo ""; \
+	echo "✓ All required tools found"
+
+check-rancher-tools:
+	@echo "Checking Rancher deployment tools..."
+	@echo ""
+	@MISSING_TOOLS=0; \
+	TOOLS="helm kubectl"; \
+	for tool in $$TOOLS; do \
+	  if ! command -v $$tool >/dev/null 2>&1; then \
+	    echo "✗ $$tool is required for Rancher deployment but not installed"; \
+	    MISSING_TOOLS=1; \
+	  else \
+	    echo "✓ $$tool found"; \
+	  fi; \
+	done; \
+	if [ $$MISSING_TOOLS -eq 1 ]; then \
+	  echo ""; \
+	  echo "Installation instructions:"; \
+	  echo "  helm (Kubernetes package manager):"; \
+	  echo "    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"; \
+	  echo "    Or: brew install helm (macOS)"; \
+	  echo ""; \
+	  echo "  kubectl (Kubernetes CLI):"; \
+	  echo "    curl -LO \"https://dl.k8s.io/release/\$$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl\""; \
+	  echo "    sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl"; \
+	  echo "    Or: brew install kubectl (macOS)"; \
+	  exit 1; \
+	fi; \
+	echo ""; \
+	echo "✓ All Rancher tools found"
 
 # Terraform targets
 init: check-prereqs
