@@ -49,6 +49,12 @@ variable "rancher_hostname" {
   default     = ""
 }
 
+variable "cert_manager_version" {
+  description = "cert-manager Helm chart version"
+  type        = string
+  default     = "v1.13.0"
+}
+
 output "kubeconfig_path" {
   value = var.kubeconfig_path
 }
@@ -65,7 +71,7 @@ resource "helm_release" "cert_manager" {
   chart            = "cert-manager"
   namespace        = "cert-manager"
   create_namespace = true
-  version          = "v1.13.0"
+  version          = var.cert_manager_version
 
   set {
     name  = "installCRDs"

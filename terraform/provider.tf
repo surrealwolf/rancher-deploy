@@ -34,14 +34,14 @@ provider "proxmox" {
 }
 
 # Kubernetes and Helm providers for Rancher deployment
-# Only configured when needed via the deploy_rancher flag
-# When deploy_rancher = false, these providers won't be used and won't validate kubeconfig existence
+# Only configured when needed via the install_rancher flag
+# When install_rancher = false, these providers won't be used and won't validate kubeconfig existence
 provider "kubernetes" {
-  config_path = var.deploy_rancher ? pathexpand("~/.kube/rancher-manager.yaml") : ""
+  config_path = var.install_rancher ? pathexpand("~/.kube/rancher-manager.yaml") : ""
 }
 
 provider "helm" {
   kubernetes {
-    config_path = var.deploy_rancher ? pathexpand("~/.kube/rancher-manager.yaml") : ""
+    config_path = var.install_rancher ? pathexpand("~/.kube/rancher-manager.yaml") : ""
   }
 }

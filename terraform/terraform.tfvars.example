@@ -52,38 +52,54 @@ clusters = {
   manager = {
     name           = "rancher-manager"
     node_count     = 3
-    cpu_cores      = 4              # 2-4 minimum for Rancher
-    memory_mb      = 8192           # 4GB minimum, 8GB recommended
-    disk_size_gb   = 50             # Expand as needed for workloads
+    cpu_cores      = 4               # 2-4 minimum for Rancher
+    memory_mb      = 8192            # 4GB minimum, 8GB recommended
+    disk_size_gb   = 100             # Expand as needed for workloads
     domain         = "example.com"  # DNS domain for VMs
-    ip_subnet      = "192.168.1"   # Base subnet (VMs will be .100, .101, .102)    ip_start_octet = 100            # Starting IP octet (VMs will be .100, .101, .102)    gateway        = "192.168.1.1" # Network gateway
+    ip_subnet      = "192.168.1"    # Base subnet
+    ip_start_octet = 100             # VMs will be .100, .101, .102
+    gateway        = "192.168.1.1"  # Network gateway
     dns_servers    = ["8.8.8.8", "8.8.4.4"]
-    storage        = "local-lvm"    # Proxmox storage datastore ID
+    storage        = "local-vm-zfs" # VM storage (cloud image downloaded to 'local' then imported)
+    vlan_id        = 1               # VLAN ID (1 for no VLAN, or your VLAN number)
   }
-  
+
   nprd-apps = {
     name           = "nprd-apps"
-    node_count     = 2
-    cpu_cores      = 4              # Can be 2-8 depending on workload
-    memory_mb      = 8192           # 4GB minimum
-    disk_size_gb   = 50             # Expand as needed
+    node_count     = 3
+    cpu_cores      = 4    # Can be 2-8 depending on workload
+    memory_mb      = 8192 # 4GB minimum
+    disk_size_gb   = 100  # Expand as needed
     domain         = "example.com"
-    ip_subnet      = "192.168.1"   # Same subnet (VMs will be .110, .111)    ip_start_octet = 110            # Starting IP octet (VMs will be .110, .111)    gateway        = "192.168.1.1"
+    ip_subnet      = "192.168.1" # Same subnet
+    ip_start_octet = 110          # VMs will be .110, .111, .112
+    gateway        = "192.168.1.1"
     dns_servers    = ["8.8.8.8", "8.8.4.4"]
-    storage        = "local-lvm"
+    storage        = "local-vm-zfs" # VM storage (cloud image downloaded to 'local' then imported)
+    vlan_id        = 1               # VLAN ID (1 for no VLAN, or your VLAN number)
   }
 }
 
 # ============================================================================
-# RANCHER CONFIGURATION
+# VM CONFIGURATION
 # ============================================================================
+
+# Starting VM IDs for clusters
+vm_id_start_manager = 401  # Manager cluster: VMs 401-403
+vm_id_start_apps    = 404  # Apps cluster: VMs 404-406
+
+# ============================================================================
+# CERT-MANAGER CONFIGURATION
+# ============================================================================
+
+cert_manager_version = "v1.13.0"
 
 # Enable Rancher deployment (default: true)
 # Rancher installs on manager cluster after it's ready, then apps cluster deploys
 # Set to false to deploy manager and apps clusters without Rancher
 install_rancher = true
 
-rancher_version = "v2.7.7"
+rancher_version = "v2.13.1"
 
 # Initial admin password (change immediately after first login!)
 rancher_password = "change-me-to-secure-password"

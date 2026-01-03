@@ -22,7 +22,7 @@ module "rancher_manager_primary" {
   source = "./modules/proxmox_vm"
 
   vm_name               = "rancher-manager-1"
-  vm_id                 = 401
+  vm_id                 = var.vm_id_start_manager
   proxmox_node          = var.proxmox_node
   cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image.datastore_id
   cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image.file_name
@@ -37,7 +37,7 @@ module "rancher_manager_primary" {
   gateway     = var.clusters["manager"].gateway
   dns_servers = var.clusters["manager"].dns_servers
   domain      = var.clusters["manager"].domain
-  vlan_id     = 14
+  vlan_id     = var.clusters["manager"].vlan_id
 
   ssh_private_key = var.ssh_private_key
 
@@ -93,7 +93,7 @@ module "rancher_manager_additional" {
   for_each = {
     for i in range(1, var.clusters["manager"].node_count) :
     "manager-${i + 1}" => {
-      vm_id          = 401 + i
+      vm_id          = var.vm_id_start_manager + i
       hostname       = "rancher-manager-${i + 1}"
       ip_address     = "${var.clusters["manager"].ip_subnet}.${var.clusters["manager"].ip_start_octet + i}/24"
       node_index     = i
@@ -194,7 +194,7 @@ module "nprd_apps_primary" {
   source = "./modules/proxmox_vm"
 
   vm_name               = "nprd-apps-1"
-  vm_id                 = 404
+  vm_id                 = var.vm_id_start_apps
   proxmox_node          = var.proxmox_node
   cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image.datastore_id
   cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image.file_name
@@ -209,7 +209,7 @@ module "nprd_apps_primary" {
   gateway     = var.clusters["nprd-apps"].gateway
   dns_servers = var.clusters["nprd-apps"].dns_servers
   domain      = var.clusters["nprd-apps"].domain
-  vlan_id     = 14
+  vlan_id     = var.clusters["nprd-apps"].vlan_id
 
   ssh_private_key = var.ssh_private_key
 
@@ -239,7 +239,7 @@ module "nprd_apps_additional" {
   for_each = {
     for i in range(1, var.clusters["nprd-apps"].node_count) :
     "nprd-apps-${i + 1}" => {
-      vm_id          = 404 + i
+      vm_id          = var.vm_id_start_apps + i
       hostname       = "nprd-apps-${i + 1}"
       ip_address     = "${var.clusters["nprd-apps"].ip_subnet}.${var.clusters["nprd-apps"].ip_start_octet + i}/24"
       node_index     = i
@@ -289,13 +289,14 @@ module "nprd_apps_additional" {
 module "rancher_deployment" {
   source = "./modules/rancher_cluster"
 
-  cluster_name      = "rancher-manager"
-  node_count        = 3
-  kubeconfig_path   = "~/.kube/rancher-manager.yaml"
-  install_rancher   = var.install_rancher
-  rancher_version   = var.rancher_version
-  rancher_hostname  = var.rancher_hostname
-  rancher_password  = var.rancher_password
+  cluster_name         = "rancher-manager"
+  node_count           = 3
+  kubeconfig_path      = "~/.kube/rancher-manager.yaml"
+  install_rancher      = var.install_rancher
+  rancher_version      = var.rancher_version
+  rancher_hostname     = var.rancher_hostname
+  rancher_password     = var.rancher_password
+  cert_manager_version = var.cert_manager_version
 
   depends_on = [
     module.rke2_manager

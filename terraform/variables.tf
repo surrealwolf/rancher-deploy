@@ -45,7 +45,26 @@ variable "clusters" {
     gateway        = string
     dns_servers    = list(string)
     storage        = string
+    vlan_id        = number # VLAN ID for network interface
   }))
+}
+
+variable "vm_id_start_manager" {
+  description = "Starting VM ID for manager cluster (e.g., 401 for VMs 401, 402, 403)"
+  type        = number
+  default     = 401
+}
+
+variable "vm_id_start_apps" {
+  description = "Starting VM ID for apps cluster (e.g., 404 for VMs 404, 405, 406)"
+  type        = number
+  default     = 404
+}
+
+variable "cert_manager_version" {
+  description = "cert-manager Helm chart version"
+  type        = string
+  default     = "v1.13.0"
 }
 
 variable "ubuntu_cloud_image_url" {
@@ -73,12 +92,6 @@ variable "rancher_hostname" {
 
 variable "install_rancher" {
   description = "Whether to install Rancher on the manager cluster"
-  type        = bool
-  default     = false
-}
-
-variable "deploy_rancher" {
-  description = "Whether to deploy Rancher after RKE2 is ready"
   type        = bool
   default     = false
 }
