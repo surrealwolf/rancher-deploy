@@ -356,6 +356,67 @@ sudo systemctl start rke2-server
 **Key Takeaway**:
 Infrastructure documentation and port specifications are CRITICAL. Always verify port purposes in official documentation before making configuration decisions. A single wrong port caused silent cluster join failure that appeared "running" but was completely broken.
 
+### CRITICAL FIX (Jan 3, 2026): RKE2 HA External etcd Clustering - RKE2_CLUSTER_INIT
+
+**Problem (Discovered During Testing)**:
+Secondary manager nodes joining the cluster appeared as "Ready" but were actually running **separate single-node etcd clusters** instead of sharing the primary's etcd:
+- Each node had its own local etcd database (localhost:2379)
+- Running `kubectl get nodes` from each node only showed itself
+- No cross-node visibility despite port 9345 registration succeeding
+- Nodes were "clustered" from a service registration perspective but **not from etcd perspective**
+- Result: Not a true HA cluster, just 3 independent nodes
+
+**Root Cause**:
+RKE2 secondary servers were installed without the `RKE2_CLUSTER_INIT=true` flag. Without this flag:
+- Primary initializes in local mode (single-node etcd)
+- Secondaries detect the primary via port 9345
+- Secondaries also initialize in local mode (separate etcd instance)
+- Each node registers successfully with RKE2 but doesn't join the etcd cluster
+
+**Solution Implemented**:
+Updated cloud-init script to set `RKE2_CLUSTER_INIT=true` on the primary node:
+
+```bash
+# In cloud-init-rke2.sh, for primary node initialization:
+else
+  log "Starting new RKE2 server (primary node)"
+  # CRITICAL: Enable external etcd clustering mode for HA
+  # This makes the primary's etcd cluster-aware so secondaries can join the same etcd
+  export RKE2_CLUSTER_INIT=true
+fi
+```
+
+**Why This Fixes the Issue**:
+- When `RKE2_CLUSTER_INIT=true`, RKE2 initializes etcd in "cluster initialization mode"
+- Secondary nodes detect this and join the primary's etcd cluster via port 2379/2380
+- All nodes share the same etcd database instead of running separate instances
+- Result: True HA cluster where all nodes see each other in `kubectl get nodes`
+
+**Verification After Fix**:
+After redeployment with `RKE2_CLUSTER_INIT=true`:
+```bash
+# Query from any node:
+sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml get nodes
+
+# Should show all 3 nodes:
+NAME                STATUS   ROLES                  AGE   VERSION
+rancher-manager-1   Ready    control-plane,etcd   5m    v1.34.3+rke2r1
+rancher-manager-2   Ready    control-plane,etcd   2m    v1.34.3+rke2r1
+rancher-manager-3   Ready    control-plane,etcd   2m    v1.34.3+rke2r1
+```
+
+**Official RKE2 HA Documentation**:
+From https://docs.rke2.io/install/ha:
+- Primary node should initialize with cluster awareness
+- Secondary nodes automatically join the primary's etcd when registering via port 9345
+- Without proper initialization, nodes may appear joined but aren't truly clustered at the data layer
+
+**Files Changed**:
+- `terraform/modules/proxmox_vm/cloud-init-rke2.sh`: Added `RKE2_CLUSTER_INIT=true` export for primary node
+
+**Key Takeaway**:
+RKE2 HA requires **explicit etcd clustering configuration**. The port 9345 registration ensures nodes communicate at the application level, but `RKE2_CLUSTER_INIT=true` is required to make them share the same etcd database for true HA. Without it, nodes are "aware of each other" but maintain separate data stores - a false sense of clustering.
+
 ## Project Structure
 
 ### Documentation (`docs/`)

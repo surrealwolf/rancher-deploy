@@ -146,6 +146,9 @@ if [ -n "${SERVER_IP}" ] && [ "${SERVER_IP}" != "" ]; then
   export RKE2_TOKEN="${SERVER_TOKEN}"
 else
   log "Starting new RKE2 server (primary node)"
+  # CRITICAL: Enable external etcd clustering mode for HA
+  # This makes the primary's etcd cluster-aware so secondaries can join the same etcd
+  export RKE2_CLUSTER_INIT=true
 fi
 
 if ! "$INSTALLER"; then
