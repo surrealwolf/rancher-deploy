@@ -53,13 +53,13 @@ rancher_password         = "your-secure-password"
 
 See [docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md) for all options.
 
-### 2. Deploy Infrastructure + Kubernetes + Rancher
+### 2. Deploy Infrastructure + Kubernetes
 
 From the root directory:
 
 ```bash
 # Deploy with automatic logging (recommended)
-./apply.sh -auto-approve
+./apply.sh
 
 # Or manually from terraform directory
 cd terraform
@@ -68,17 +68,21 @@ terraform plan
 terraform apply -auto-approve
 ```
 
+**Note**: The `apply.sh` script automatically:
+- Enables debug logging (`TF_LOG=debug`)
+- Saves logs to: `terraform/terraform-<timestamp>.log`
+- Runs terraform apply with auto-approval in background
+- Handles all flags internally - just run `./apply.sh`
+
 **⚠️ Critical: RKE2 Version**
 - Use specific released version: `v1.34.3+rke2r1`
 - Do NOT use `"latest"` - it will fail (not a downloadable release)
-- Check available versions at https://github.com/rancher/rke2/tags
+- Check available versions: https://github.com/rancher/rke2/tags
 
 **⚠️ Critical: RKE2 Port Configuration (HA Clusters)**
-- RKE2 uses **port 9345** for server registration (secondary nodes joining cluster)
-- RKE2 uses **port 6443** for Kubernetes API (kubectl, only after cluster initialized)
-- Configuration automatically handled by terraform cloud-init script
-- For manual cluster joining: `RKE2_URL="https://<primary>:9345"` (NOT :6443)
-- See [RKE2 HA Documentation](https://docs.rke2.io/install/ha) for details
+- **Port 9345**: Server registration (secondary nodes join primary)
+- **Port 6443**: Kubernetes API (kubectl, only after cluster initialized)
+- Configured automatically via cloud-init
 
 ### 3. Verify Deployment
 
