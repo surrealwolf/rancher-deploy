@@ -12,92 +12,37 @@ This project deploys a complete Rancher management cluster and non-production ap
 
 ## Latest Updates (Jan 3, 2026)
 
-### Critical Fix: Proxmox Cloud Image Import Path (Jan 3, 2026)
+### Critical Fixes & Key Lessons
 
-**Problem Discovered During Deployment:**
-VM creation failed with: `unable to parse directory volume name 'ubuntu-noble-cloudimg-amd64.qcow2'`
+**1. Proxmox Cloud Image Import Path**
+- When using `content_type = "import"`, Proxmox stores files in `import/` subdirectory
+- Use: `import_from = "images-import:import/${var.cloud_image_file_name}"` (NOT without `import/`)
+- Error if wrong: `unable to parse directory volume name`
 
-**Root Cause:**
-When importing cloud images to Proxmox VE via the `proxmox_virtual_environment_download_file` resource with `content_type = "import"`, the file is automatically placed in a subdirectory (e.g., `import/ubuntu-noble-cloudimg-amd64.qcow2` instead of just the filename).
+**2. RKE2 Version Management**
+- Always use specific version tags: `v1.34.3+rke2r1` (NOT "latest")
+- "latest" is not a downloadable release
+- Check available versions: https://github.com/rancher/rke2/tags
 
-**Solution Implemented:**
-Updated VM disk configuration to include the subdirectory path:
-```hcl
-# Before (INCORRECT):
-import_from = "images-import:${var.cloud_image_file_name}"
-# Result: "images-import:ubuntu-noble-cloudimg-amd64.qcow2" ✗
+**3. RKE2 HA Port Configuration**
+- **Port 9345**: Server registration (secondary nodes join primary)
+- **Port 6443**: Kubernetes API (kubectl, only after cluster initialized)
+- Configuration uses `RKE2_URL="https://<primary>:9345"` for joining
 
-# After (CORRECT):
-import_from = "images-import:import/${var.cloud_image_file_name}"
-# Result: "images-import:import/ubuntu-noble-cloudimg-amd64.qcow2" ✓
-```
+**4. Cloud-Init Initialization**
+- VMs must complete cloud-init before RKE2 installation
+- Use boot-finished file check (simpler than status polling)
+- Prevents hanging on incomplete network initialization
 
-**Files Changed:**
-- `terraform/modules/proxmox_vm/main.tf` - Updated disk import_from path with `import/` subdirectory
+**5. RKE2 Installation**
+- Use config files (`/etc/rancher/rke2/config.yaml`), not environment variables
+- Primary node initializes HA cluster, secondaries join via port 9345
+- Set `RKE2_CLUSTER_INIT=true` only on primary for proper etcd clustering
 
-**Key Takeaway:**
-When using Proxmox `content_type = "import"`, the provider stores files in a subdirectory structure. Always verify the actual file path after download by checking the resource ID output (e.g., `id=images-import:import/ubuntu-noble-cloudimg-amd64.qcow2`).
-
-### Critical Fix: RKE2 Version
-- **Issue**: RKE2 "latest" is not a downloadable release
-- **Solution**: Use specific version tags like `v1.34.3+rke2r1`
-- **Check**: https://github.com/rancher/rke2/tags for available versions
-- **Prevention**: Always validate version exists before deployment
-
-### Cloud-Init Integration
-- Added `wait_for_cloud_init` provisioner to ensure networking is ready before RKE2 installation
-- Waits for `/var/lib/cloud/instance/boot-finished` and `cloud-init status --wait`
-- Prevents RKE2 installation on systems with incomplete networking
-
-### RKE2 Installation Improvements
-- Changed from piped curl to download + execute pattern for better error handling
-- Fixed environment variable passing with `sudo -E bash -c` pattern
-- Added cleanup of SSH known_hosts to prevent host key warnings
-- Added explicit SSH connectivity checks before RKE2 operations
-- Added token file polling with 120 attempts over 4 minutes
-
-### Logging Support
-- Added `apply.sh` script in root directory with automatic logging
-- Logs saved to timestamped files: `terraform/terraform-<timestamp>.log`
-- Debug logging enabled via `TF_LOG=debug` environment variable
-- Log levels: trace, debug, info, warn, error
-- See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for logging details
-
-### RKE2 Provisioning Lessons Learned (Jan 2, 2026)
-- VMs must wait for **complete cloud-init initialization** before attempting RKE2 installation
-- Initial provisioner approach with minimal sleep (10s) was **insufficient** and caused hanging
-- Remote-exec provisioners trigger SSH connection checks but don't guarantee system readiness
-
-**Solutions Implemented:**
-1. **cloud-init Status Check**: Script now runs `cloud-init status --wait` with timeout
-2. **Network Connectivity Verification**: Ping test to 8.8.8.8 before attempting downloads
-3. **DNS Resolution Validation**: nslookup test for get.rke2.io before curl download
-4. **Exponential Retry Logic**: Multiple retries with logged attempts (30-120 attempts per check)
-5. **curl Timeout Protection**: Added `--max-time 60 --connect-timeout 30` to curl command with `timeout 60` wrapper
-
-### SSH Timeout Root Cause - Intrusion Prevention System (Jan 2, 2026)
-
-**Discovery**: Intermittent SSH timeouts during provisioning caused by **Intrusion Prevention System (IPS) blocking high-frequency SSH connections**
-
-**Symptoms**:
-- SSH initial connection works (script uploads successfully)
-- SSH reconnect hangs for 5+ minutes during provisioning
-- Affects multiple nodes inconsistently
-- Eventually times out or connects after IPS timeout resets
-
-**Root Cause**: IPS systems treat repeated SSH connections from automation tools as potential attack pattern during heavy provisioning activity
-
-**Prevention for Future Deployments**:
-1. Whitelist Terraform runner IP in IPS/firewall rules
-2. Configure IPS to allow high-frequency SSH from known automation IPs
-3. Disable/bypass IPS for test environments during deployment
-4. Contact network team to increase SSH connection thresholds
-
-**Impact**: Does NOT affect curl timeout fix or provisioning script logic - it's a network-level security issue separate from RKE2 installation
-
-**Updated Script Location:** `terraform/modules/proxmox_vm/cloud-init-rke2.sh`
-
-**Deployment Sequence with Proper Waiting:**
+**6. SSH Connection Management**
+- Be aware of IPS/firewall blocks on high-frequency SSH during provisioning
+- Solution: Whitelist Terraform runner IP in security policies
+- Affects automation tools only, not core RKE2 functionality
 ```
 1. VM created and boots (30-50 seconds)
 2. SSH provisioner connects (attempts until available)
@@ -152,322 +97,63 @@ fi
 - Exit code 35: SSL/TLS error
 
 **Files Changed**:
-- `terraform/modules/proxmox_vm/cloud-init-rke2.sh`: Line 37 (INSTALLER path changed)
-- Enhanced error logging for curl operations (lines 40-56)
-
-**Testing Verification**:
-✅ Tested on live VM:
-```
-Download attempt 1/5...
-✓ RKE2 installer downloaded successfully
-Installing RKE2 server v1.34.3+rke2r1...
-```
-
-**Key Takeaway**:
-- Always use different filenames for downloaded content vs executing wrapper
-- Expose curl errors (don't suppress with 2>/dev/null) during debugging
-- Test actual provisioner environment (with sudo -E) not just direct curl
-
-### RKE2 Provisioning Timeout Fix - Non-Blocking Installation (Jan 2, 2026)
-
-**CRITICAL FIX (Jan 3, 2026): Sequential Node Provisioning**
-
-**Problem (Confirmed in Live Deployment)**:
-Current parallel deployment causes HA cluster formation failure:
-- All 3 manager nodes (1, 2, 3) created simultaneously
-- Secondary nodes (2, 3) try to fetch token from primary (1) **before it exists**
-- RKE2 service startup takes 2-3 minutes, token appears even later
-- Secondary nodes timeout after 1-60 seconds and install as **standalone nodes**
-- Result: 3 broken single-node clusters instead of 1 HA cluster
-
-**Evidence from Deployment**:
-```
-[02:09:24] manager-2: "Secondary server detected but token not provided. Waiting..."
-[02:09:24] manager-3: "Secondary server detected but token not provided. Waiting..."  
-[02:09:26] manager-1: "✓ RKE2 server installation complete"
-[02:10:45] manager-3: "Waiting for token from 192.168.14.100... attempt 60/60"
-[02:10:46] manager-3: "⚠ Could not fetch token from first server, installing as standalone"
-```
-
-Manager-1 didn't complete until 02:09:26, but secondary nodes started trying to fetch at 02:09:24.
-
-**Solution: Sequential Node Provisioning**
-
-Restructured Terraform modules to enforce strict ordering:
-
-1. **Stage 1: Primary Nodes** - Create primary node for each cluster, let it fully initialize
-2. **Stage 2: Secondary Nodes** - Only create secondaries AFTER primary's token exists (verified)
-3. **Stage 3: Verification** - Confirm all nodes in cluster are ready
-4. **Stage 4: Next Cluster** - Only start dependent clusters after upstream is ready
-
-**Module Structure**:
-```hcl
-# Manager cluster
-module "rancher_manager_primary" { }              # Stage 1
-module "rancher_manager_additional" {             # Stage 2
-  depends_on = [rancher_manager_primary]
-}
-module "rke2_manager" { }                         # Stage 3 - Verification
-  depends_on = [rancher_manager_primary, rancher_manager_additional]
-
-# Apps cluster (only after manager verified)
-module "nprd_apps_primary" { }                    # Stage 4
-  depends_on = [rke2_manager]
-module "nprd_apps_additional" { }                 # Stage 5
-  depends_on = [nprd_apps_primary]
-module "rke2_apps" { }                            # Stage 6 - Verification
-```
-
-**Cloud-Init Changes**:
-- Increased token wait from 60 retries (1 min) to 300 retries with 2-sec sleep (10 min total)
-- **Changed behavior: FAIL if token not found** instead of "installing as standalone"
-- Increased retry interval from 1 second to 2 seconds (reduces SSH connection spam)
-- Clear error messages showing where to check primary node status
-
-**Token Wait Logic**:
-```bash
-# Before: 60 × 1 second = 1 minute
-for i in {1..60}; do
-  if token=$(ssh ... cat /var/lib/rancher/rke2/server/node-token); then
-    break
-  fi
-  sleep 1
-done
-# Falls back to: "installing as standalone" ← PROBLEM
-
-# After: 300 × 2 seconds = 10 minutes
-for i in {1..300}; do
-  if token=$(ssh ... cat /var/lib/rancher/rke2/server/node-token); then
-    TOKEN_FOUND=1; break
-  fi
-  sleep 2
-done
-if [ $TOKEN_FOUND -eq 0 ]; then
-  exit 1  # FAIL loudly instead of falling back
-fi
-```
-
-**Why 10 Minutes?**
-- RKE2 service startup: ~60-90 seconds
-- etcd initialization: ~30-45 seconds  
-- Kubernetes API readiness: ~30-45 seconds
-- Total before token file appears: ~2-3 minutes
-- **10-minute timeout = 7-8 minutes safety margin**
-
-**Timeline Comparison**:
-
-Original (Parallel):
-```
-T=0:00   All 6 VMs created simultaneously
-T=1:00   All 6 boot, SSH available
-T=1:30   All 6 start RKE2 installation
-T=2:00   manager-1 completes, token appears
-         manager-2,3 already gave up (timeout)
-         All 6 nodes are now standalone ✗
-T=15+    Terraform finish time
-```
-
-New (Sequential):
-```
-T=0:00   manager-1 VM created
-T=1:00   manager-1 boots, SSH available
-T=1:30   manager-1 RKE2 installation starts
-T=3:30   manager-1 RKE2 complete, token ready ✓
-T=3:30   manager-2, manager-3 VMs created
-T=4:30   manager-2, manager-3 boot, SSH available
-T=5:00   manager-2, manager-3 start RKE2, immediately fetch token ✓
-T=6:00   Manager cluster verified (all 3 nodes joined) ✓
-T=6:00   apps-1 VM created
-T=7:30   apps-1 RKE2 complete, token ready ✓
-T=8:00   apps-2, apps-3 VMs created, RKE2 starts, joins ✓
-T=12:00  Terraform complete with proper HA clusters ✓
-```
-
-**Longer wall-clock time (~25-30 min vs 15-20 min) BUT results in working clusters.**
-
-**Files Changed**:
-- `terraform/main.tf` - Complete restructuring with 6 modules (primary + additional for each cluster, plus verification)
-- `terraform/outputs.tf` - Updated for new module structure, better cluster info
-- `terraform/modules/proxmox_vm/main.tf` - Added `rke2_is_primary` variable
-- `terraform/modules/proxmox_vm/cloud-init-rke2.sh` - Extended token wait, fail on timeout
-- `docs/SEQUENTIAL_DEPLOYMENT_DESIGN.md` - Detailed design documentation (NEW)
-
-**Testing Verification**:
-After deployment:
-```bash
-# Verify HA formation (should show 3 nodes, not standalone)
-kubectl --kubeconfig=~/.kube/rancher-manager.yaml get nodes
-# Should output:
-# rancher-manager-1   Ready
-# rancher-manager-2   Ready
-# rancher-manager-3   Ready
-
-# Verify secondary joined cluster (not standalone)
-ssh ubuntu@192.168.14.101 'sudo cat /var/lib/rancher/rke2/server/config.yaml' | grep server:
-# Should show: server: https://192.168.14.100:6443
-```
-
-**Key Takeaway**: 
-Sequential provisioning solves HA cluster formation by ensuring primaries are ready before secondaries start, not by hoping parallel deployment timing works out.
-
-### CRITICAL FIX (Jan 4, 2026): RKE2 Registration Port 9345 vs API Port 6443
-
-**Problem (Confirmed in Live Deployment)**:
-Split-brain etcd cluster where secondary managers weren't joining primary:
-- All 3 managers appeared "running" (services active)
-- Only manager-1 visible in kubectl
-- manager-2 and manager-3 formed independent single-node clusters
-- `kubectl get nodes` from any node showed different node list (classic split-brain symptom)
-- Cause: Cloud-init script used wrong port for RKE2_URL
-
-**Root Cause Discovered**:
-RKE2 uses **TWO different ports** with different purposes:
-1. **Port 9345**: RKE2 server registration endpoint (where secondary nodes register to JOIN cluster)
-2. **Port 6443**: Kubernetes API server (read-only access for kubectl, used AFTER cluster formed)
-
-The cloud-init script was configured with:
-```bash
-# WRONG - uses API port, not registration port:
-export RKE2_URL="https://${SERVER_IP}:6443"
-```
-
-Secondary nodes tried to join on port 6443 (Kubernetes API), which only answers API requests after cluster is formed. During initialization, port 6443 is not listening for registration, so secondary nodes timeout and bootstrap as **standalone clusters**.
-
-**Evidence from Official RKE2 Documentation**:
-From https://docs.rke2.io/install/ha:
-> "The `rke2 server` process listens on port `9345` for new nodes to register with the cluster."
-
-**Solution: Use Port 9345 for Server Registration**
-
-Updated cloud-init script with correct port:
-```bash
-# CORRECT - uses registration port for joining:
-export RKE2_URL="https://${SERVER_IP}:9345"
-```
-
-**Manual Verification of Fix**:
-Manually configured manager-2 to join manager-1 with correct configuration:
-```bash
-# On manager-2:
-echo "server: https://192.168.14.100:9345" | sudo tee /etc/rancher/rke2/config.yaml
-echo "token: <token-from-manager-1>" | sudo tee -a /etc/rancher/rke2/config.yaml
-sudo systemctl start rke2-server
-```
-
-**Result**: manager-2 immediately joined manager-1 cluster and appeared in `kubectl get nodes` as Ready
-- Before fix: Only manager-1 visible (split-brain)
-- After fix: Both manager-1 and manager-2 visible, both showing Ready status ✓
-
-**Port Purpose Reference**:
-- **9345**: RKE2 server registration/join port (internal cluster communication)
-  - Used by: Secondary RKE2 servers registering with primary
-  - Used by: RKE2 agents joining the cluster
-  - Used when: During node provisioning and initialization
-  
-- **6443**: Kubernetes API server (external API access)
-  - Used by: kubectl commands
-  - Used by: External clients connecting to Kubernetes
-  - Used when: After cluster is fully initialized
-
-- **Other important ports**:
-  - 2379/2380: etcd client/peer (internal cluster communication)
-  - 10250: kubelet (internal node communication)
-  - 6443: Kubernetes API (external)
-
-**Files Changed**:
-- `terraform/modules/proxmox_vm/cloud-init-rke2.sh` - Line 123: Changed RKE2_URL from port 6443 to 9345
-  - Also updated health check from HTTPS GET to TCP connectivity test on port 9345
-  - Increased cloud-init timeout from 120 attempts (10 min) to 180 attempts (15 min) for more stability
-
-**Key Takeaway**:
-Infrastructure documentation and port specifications are CRITICAL. Always verify port purposes in official documentation before making configuration decisions. A single wrong port caused silent cluster join failure that appeared "running" but was completely broken.
-
-### CRITICAL FIX (Jan 3, 2026): RKE2 HA External etcd Clustering - RKE2_CLUSTER_INIT
-
-**Problem (Discovered During Testing)**:
-Secondary manager nodes joining the cluster appeared as "Ready" but were actually running **separate single-node etcd clusters** instead of sharing the primary's etcd:
-- Each node had its own local etcd database (localhost:2379)
-- Running `kubectl get nodes` from each node only showed itself
-- No cross-node visibility despite port 9345 registration succeeding
-- Nodes were "clustered" from a service registration perspective but **not from etcd perspective**
-- Result: Not a true HA cluster, just 3 independent nodes
-
-**Root Cause**:
-RKE2 secondary servers were installed without the `RKE2_CLUSTER_INIT=true` flag. Without this flag:
-- Primary initializes in local mode (single-node etcd)
-- Secondaries detect the primary via port 9345
-- Secondaries also initialize in local mode (separate etcd instance)
-- Each node registers successfully with RKE2 but doesn't join the etcd cluster
-
-**Solution Implemented**:
-Updated cloud-init script to set `RKE2_CLUSTER_INIT=true` on the primary node:
-
-```bash
-# In cloud-init-rke2.sh, for primary node initialization:
-else
-  log "Starting new RKE2 server (primary node)"
-  # CRITICAL: Enable external etcd clustering mode for HA
-  # This makes the primary's etcd cluster-aware so secondaries can join the same etcd
-  export RKE2_CLUSTER_INIT=true
-fi
-```
-
-**Why This Fixes the Issue**:
-- When `RKE2_CLUSTER_INIT=true`, RKE2 initializes etcd in "cluster initialization mode"
-- Secondary nodes detect this and join the primary's etcd cluster via port 2379/2380
-- All nodes share the same etcd database instead of running separate instances
-- Result: True HA cluster where all nodes see each other in `kubectl get nodes`
-
-**Verification After Fix**:
-After redeployment with `RKE2_CLUSTER_INIT=true`:
-```bash
-# Query from any node:
-sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml get nodes
-
-# Should show all 3 nodes:
-NAME                STATUS   ROLES                  AGE   VERSION
-rancher-manager-1   Ready    control-plane,etcd   5m    v1.34.3+rke2r1
-rancher-manager-2   Ready    control-plane,etcd   2m    v1.34.3+rke2r1
-rancher-manager-3   Ready    control-plane,etcd   2m    v1.34.3+rke2r1
-```
-
-**Official RKE2 HA Documentation**:
-From https://docs.rke2.io/install/ha:
-- Primary node should initialize with cluster awareness
-- Secondary nodes automatically join the primary's etcd when registering via port 9345
-- Without proper initialization, nodes may appear joined but aren't truly clustered at the data layer
-
-**Files Changed**:
-- `terraform/modules/proxmox_vm/cloud-init-rke2.sh`: Added `RKE2_CLUSTER_INIT=true` export for primary node
-
-**Key Takeaway**:
-RKE2 HA requires **explicit etcd clustering configuration**. The port 9345 registration ensures nodes communicate at the application level, but `RKE2_CLUSTER_INIT=true` is required to make them share the same etcd database for true HA. Without it, nodes are "aware of each other" but maintain separate data stores - a false sense of clustering.
-
 ## Project Structure
 
 ### Documentation (`docs/`)
 Core documentation for users and developers:
 - `DEPLOYMENT_GUIDE.md` - Complete deployment guide with logging instructions
 - `TERRAFORM_VARIABLES.md` - Detailed variable reference
-- `TROUBLESHOOTING.md` - Common issues and solutions (includes RKE2 version fix)
+- `TROUBLESHOOTING.md` - Common issues and solutions
 - `CLOUD_IMAGE_SETUP.md` - Cloud image provisioning details
-- `TFVARS_SETUP.md` - Setup and configuration instructions
-- `RANCHER_DEPLOYMENT.md` - Rancher deployment automation
 
 ### Terraform Configuration (`terraform/`)
 Infrastructure-as-code using Terraform:
-- `main.tf` - Cluster module definitions (uses v1.34.3+rke2r1)
-- `provider.tf` - bpg/proxmox provider configuration with logging comments
-- `variables.tf` - Input variable definitions and defaults
+- `main.tf` - Cluster module definitions
+- `provider.tf` - bpg/proxmox provider configuration
+- `variables.tf` - Input variable definitions
 - `outputs.tf` - Output values for cluster access
-- `terraform.tfvars.example` - Example variable values (copy and customize)
+- `terraform.tfvars.example` - Example variable values
 - `modules/proxmox_vm/` - Reusable VM resource module
-- `modules/rke2_cluster/` - RKE2 installation with provisioners
+- `modules/rke2_manager_cluster/` - Manager cluster verification
+- `modules/rke2_downstream_cluster/` - Apps cluster provisioning
 
 ### Scripts (Root)
 - `apply.sh` - Deploy with automatic logging (recommended method)
 
 ## Key Guidelines
+
+### Deployment
+
+**RECOMMENDED: Use the apply.sh script**
+
+```bash
+cd /home/lee/git/rancher-deploy
+./apply.sh
+```
+
+This automatically:
+- Sets up debug logging (`TF_LOG=debug`)
+- Saves logs to timestamped file: `terraform/terraform-<timestamp>.log`
+- Runs terraform apply with auto-approval in background
+
+**IMPORTANT**: The apply.sh script always starts terraform apply in the background. Do NOT run terraform apply again - just monitor the logs.
+
+**Expected Deployment Timeline:**
+- Ubuntu image download: 30-40 seconds
+- VM creation: 1-2 minutes
+- SSH connectivity: 3-5 minutes
+- RKE2 installation: 5-10 minutes per cluster
+- Token verification: 1-2 minutes
+- **Total: 25-30 minutes**
+
+**Monitoring:**
+```bash
+# Watch the logs in real-time
+tail -f terraform/terraform-<timestamp>.log
+
+# Filter for key events
+grep -E "Creating|Complete|ERROR" terraform/terraform-<timestamp>.log
+```
 
 ### Terraform Development
 
