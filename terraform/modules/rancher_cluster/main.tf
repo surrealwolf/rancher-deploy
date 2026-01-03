@@ -59,78 +59,64 @@ output "cluster_name" {
   value = var.cluster_name
 }
 
-# Install cert-manager for Rancher (only if deploying Rancher)
-# Uses local-exec with helm CLI to handle self-signed certificates
-resource "null_resource" "install_cert_manager" {
+# Deploy Rancher using external script
+# Script handles full deployment: cert-manager + Rancher with proper error handling
+resource "null_resource" "deploy_rancher" {
   count = var.install_rancher ? 1 : 0
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "Installing cert-manager..."
-      export KUBECONFIG="${var.kubeconfig_path}"
-      
-      # Add Jetstack helm repo
-      helm repo add jetstack https://charts.jetstack.io --force-update || true
-      helm repo update
-      
-      # Create namespace
-      kubectl create namespace cert-manager --insecure-skip-tls-verify 2>/dev/null || true
-      
-      # Install cert-manager with self-signed cert support
-      helm install cert-manager jetstack/cert-manager \
-        --namespace cert-manager \
-        --insecure-skip-tls-verify \
-        --set installCRDs=true \
-        --version ${var.cert_manager_version} \
-        --wait \
-        --timeout 10m
-      
-      echo "✓ cert-manager installed"
+      chmod +x ${path.module}/deploy-rancher.sh
+      ${path.module}/deploy-rancher.sh \
+        "${pathexpand(var.kubeconfig_path)}" \
+        "${var.rancher_version}" \
+        "${var.rancher_hostname}" \
+        "${var.rancher_password}" \
+        "${var.cert_manager_version}"
     EOT
-    
-    environment = {
-      KUBECONFIG = pathexpand(var.kubeconfig_path)
-    }
   }
 }
 
-# Install Rancher (only on manager cluster)
-# Uses local-exec with helm CLI to handle self-signed certificates
-resource "null_resource" "install_rancher" {
+# Verify Rancher deployment and accessibility
+resource "null_resource" "verify_rancher" {
   count = var.install_rancher ? 1 : 0
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "Installing Rancher..."
-      export KUBECONFIG="${var.kubeconfig_path}"
-      
-      # Add Rancher helm repo
-      helm repo add rancher-stable https://releases.rancher.com/server-charts/stable --force-update || true
-      helm repo update
-      
-      # Create namespace
-      kubectl create namespace cattle-system --insecure-skip-tls-verify 2>/dev/null || true
-      
-      # Install Rancher with self-signed cert support
-      helm install rancher rancher-stable/rancher \
-        --namespace cattle-system \
-        --insecure-skip-tls-verify \
-        --set hostname=${var.rancher_hostname} \
-        --set replicas=3 \
-        --set bootstrapPassword=${var.rancher_password} \
-        --version ${var.rancher_version} \
-        --wait \
-        --timeout 15m
-      
-      echo "✓ Rancher installed at https://${var.rancher_hostname}"
-      
-      # Get bootstrap secret
-      sleep 10
-      BOOTSTRAP_PWD=$(kubectl get secret --namespace cattle-system bootstrap-secret \
-        -o go-template='{{.data.bootstrapPassword|base64decode}}' \
-        --insecure-skip-tls-verify 2>/dev/null || echo "check manually")
       echo ""
-      echo "Rancher bootstrap password: $BOOTSTRAP_PWD"
+      echo "=========================================="
+      echo "Verifying Rancher Deployment"
+      echo "=========================================="
+      
+      export KUBECONFIG="${pathexpand(var.kubeconfig_path)}"
+      
+      # Check Rancher pods
+      echo "Rancher Pods Status:"
+      kubectl get pods -n cattle-system --no-headers | head -5
+      
+      # Verify Rancher is responding
+      echo ""
+      echo "Testing Rancher URL: https://${var.rancher_hostname}"
+      HTTP_CODE=$(curl -k -s -o /dev/null -w "%%{http_code}" "https://${var.rancher_hostname}" 2>/dev/null || echo "000")
+      
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "✓ Rancher is ACCESSIBLE (HTTP $HTTP_CODE)"
+      else
+        echo "⚠ Rancher HTTP Status: $HTTP_CODE"
+        echo "  (This may be normal during startup, allow 2-3 minutes for full initialization)"
+      fi
+      
+      # Show login instructions
+      echo ""
+      echo "=========================================="
+      echo "RANCHER ACCESS"
+      echo "=========================================="
+      echo "URL: https://${var.rancher_hostname}"
+      echo "Username: admin"
+      echo "Password: (from rancher_password in tfvars)"
+      echo ""
+      echo "IMPORTANT: Change password immediately after first login!"
+      echo "=========================================="
     EOT
     
     environment = {
@@ -138,7 +124,7 @@ resource "null_resource" "install_rancher" {
     }
   }
 
-  depends_on = [null_resource.install_cert_manager]
+  depends_on = [null_resource.deploy_rancher]
 }
 
 # Optional: Create monitoring namespace for future agent deployments
@@ -147,8 +133,7 @@ resource "null_resource" "create_monitoring_namespace" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      export KUBECONFIG="${var.kubeconfig_path}"
-      kubectl create namespace cattle-monitoring-system --insecure-skip-tls-verify 2>/dev/null || true
+      kubectl create namespace cattle-monitoring-system 2>/dev/null || true
       echo "✓ Monitoring namespace ready"
     EOT
     
@@ -157,5 +142,5 @@ resource "null_resource" "create_monitoring_namespace" {
     }
   }
 
-  depends_on = [null_resource.install_rancher]
+  depends_on = [null_resource.deploy_rancher]
 }
