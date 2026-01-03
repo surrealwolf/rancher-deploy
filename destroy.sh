@@ -44,8 +44,8 @@ echo "PID: $$"
 echo "Logs: terraform/$LOG_FILE"
 echo ""
 
-# Run destroy in background with auto-approve
-/usr/bin/terraform destroy -auto-approve "$@" >> "$LOG_FILE" 2>&1 &
+# Run destroy in background with auto-approve and parallelism
+/usr/bin/terraform destroy -auto-approve -parallelism=3 "$@" >> "$LOG_FILE" 2>&1 &
 DESTROY_PID=$!
 
 echo "Destroy started (PID: $DESTROY_PID)"

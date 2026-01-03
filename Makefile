@@ -101,7 +101,7 @@ destroy:
 
 destroy-quick:
 	@echo "⚠️  Quick destroy without confirmation (use with caution!)"
-	@cd $(TF_DIR) && terraform destroy -auto-approve
+	@cd $(TF_DIR) && terraform destroy -auto-approve -parallelism=3
 	@rm -fv $(TF_DIR)/.manager-token 2>/dev/null || true
 	@rm -fv ~/.kube/rancher-manager.yaml 2>/dev/null || true
 	@echo "✓ Infrastructure destroyed"
