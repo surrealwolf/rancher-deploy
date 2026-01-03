@@ -69,6 +69,13 @@ resource "null_resource" "fetch_manager_token" {
     command = "bash ${path.module}/fetch-token.sh ${var.ssh_private_key} ${local.manager_primary_ip} ${local.manager_token_file}"
   }
 
+  # Clean up token file on destroy
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command    = "rm -f ${path.module}/.manager-token"
+  }
+
   depends_on = [
     module.rancher_manager_primary
   ]
