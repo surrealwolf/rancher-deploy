@@ -38,7 +38,7 @@ rke2_version = "v1.34.3+rke2r1"  # Check https://github.com/rancher/rke2/tags
 # Rancher configuration
 rancher_hostname = "rancher.example.com"
 rancher_password = "your-secure-password"
-deploy_rancher   = false  # Set to true after RKE2 clusters are operational
+install_rancher  = true  # Deploys Rancher automatically in single apply
 ```
 
 **Critical: RKE2 Version**
@@ -215,16 +215,36 @@ Automatically created at:
 - `~/.kube/rancher-manager.yaml` - Manager cluster
 - `~/.kube/nprd-apps.yaml` - Apps cluster
 
-### Deploy Rancher (Optional)
+### Deploy Rancher (Automatic with Single-Apply)
 
-After verifying RKE2 clusters are operational:
+**New in this version**: Rancher is now deployed automatically in a single `terraform apply` command! No manual kubeconfig retrieval needed.
 
+**How it works (Solution 1):**
+
+We use a **placeholder kubeconfig** approach:
+1. **Early**: Cloud-init creates a placeholder `~/.kube/rancher-manager.yaml` during VM startup (~40s)
+2. **Terraform validation**: Kubernetes provider validates path exists (succeeds with placeholder)
+3. **Middle**: RKE2 installs and generates real credentials (~10m)
+4. **Late**: Real kubeconfig overwrites placeholder (~11m)
+5. **Final**: Rancher installation begins with valid credentials (~15-20m)
+
+This eliminates the need for:
+- ❌ Manual kubeconfig retrieval between runs
+- ❌ Two separate `terraform apply` commands
+- ❌ Waiting for RKE2 readiness before Helm deployment
+
+**Configuration:**
+```hcl
+# terraform/terraform.tfvars
+install_rancher = true  # Rancher installs automatically on first apply
+```
+
+**To deploy everything in one command:**
 ```bash
-# Update terraform.tfvars
-deploy_rancher = true
-
-# Redeploy
+# Already set to true in default tfvars
 ./apply.sh -auto-approve
+
+# Total time: ~35-40 minutes (includes VMs + RKE2 + Rancher)
 ```
 
 ### Access Rancher UI

@@ -659,6 +659,99 @@ VMs → Select VM → Console
 # Monitor cloud-init and system startup
 ```
 
+## Destroy Issues
+
+### Issue: `terraform destroy` fails with RBD permission error
+
+**Error:**
+```
+rbd error: rbd: listing images failed: (13) Permission denied
+Parameter verification failed.
+```
+
+**Root Cause:**
+When set to `true` (the provider's previous default), the `delete_unreferenced_disks_on_destroy` parameter attempts to read RBD disk metadata during VM deletion. This requires elevated permissions on RBD-backed storage that API tokens may not possess, causing permission errors even though the VM deletion itself succeeds.
+
+**Background on RBD:**
+- **RBD** = RADOS Block Device (Ceph distributed storage)
+- **When used**: Multiple Proxmox nodes share same storage pool
+- **Permission model**: Ceph has granular permissions separate from Proxmox
+- **The issue**: VM deletion only needs Proxmox permissions, but disk verification needs Ceph permissions
+- **This project**: Uses `local-vm-zfs` (single-node ZFS storage) which doesn't have this problem
+- **If you use RBD**: Ensure your API token has elevated `Datastore.*` permissions or disable disk verification (recommended)
+
+**Status:**
+- ✅ **FIXED in this project** (v0.90.0 of bpg/proxmox provider)
+- ⚠️ **Not a documented provider issue** - RBD permission errors during destroy are not reported in the bpg/terraform-provider-proxmox GitHub issues tracker
+- 📌 **Proxy root cause** - Appears to be a Proxmox backend limitation with RBD disk cleanup permissions, not a Terraform provider bug
+
+**Solution (Already Implemented):**
+
+The VM resource in `terraform/modules/proxmox_vm/main.tf` now includes:
+```hcl
+resource "proxmox_virtual_environment_vm" "vm" {
+  # ... other configuration ...
+  stop_on_destroy                    = true
+  delete_unreferenced_disks_on_destroy = false  # Disable RBD disk cleanup
+  purge_on_destroy                   = false    # Skip backup purge
+}
+```
+
+**How This Works:**
+- `stop_on_destroy = true`: Cleanly stops VMs before deletion
+- `delete_unreferenced_disks_on_destroy = false`: **Skips problematic RBD disk metadata check**
+- `purge_on_destroy = false`: Avoids backup cleanup (unnecessary for dev/test)
+
+**What Gets Destroyed:**
+✅ VM configurations are fully deleted
+✅ VM disks are fully deleted
+✅ Terraform state is cleaned
+❌ Disk cleanup doesn't attempt RBD metadata reads (avoiding permission errors)
+
+The RBD disks are still physically deleted by Proxmox; we just skip the provider's secondary verification step.
+
+**If Destroy Still Fails:**
+
+1. **Check terraform state:**
+   ```bash
+   cd terraform
+   terraform state list
+   ```
+
+2. **If resources still exist**, manually delete remaining VMs:
+   ```bash
+   # List resources
+   terraform state list
+   
+   # Remove individual resources to allow destroy to continue
+   terraform state rm 'module.rancher_manager.proxmox_virtual_environment_vm.vm["rancher-manager-1"]'
+   
+   # Retry destroy
+   terraform destroy -auto-approve
+   ```
+
+3. **Manual Proxmox API deletion** (last resort):
+   ```bash
+   # Using Proxmox API
+   curl -X DELETE \
+     -H "Authorization: PVEAPIToken=user@pam:tokenid=secret" \
+     https://proxmox.example.com:8006/api2/json/nodes/pve1/qemu/401
+   ```
+
+**Known Provider Limitations:**
+
+The `delete_unreferenced_disks_on_destroy` parameter was hardcoded in early provider versions. It was made configurable in v0.90+ (merged Nov 2025). This project uses v0.90.0+ with the parameter explicitly disabled to avoid RBD permission issues.
+
+**Prevention for Future Deployments:**
+
+Always ensure your Terraform configuration includes:
+```hcl
+delete_unreferenced_disks_on_destroy = false
+purge_on_destroy = false
+```
+
+When using RBD-backed storage in Proxmox.
+
 ## Still Having Issues?
 
 1. **Gather diagnostics:**

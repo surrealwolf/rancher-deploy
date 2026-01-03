@@ -43,6 +43,40 @@ if [ $CLOUD_INIT_ATTEMPTS -ge $MAX_CLOUD_INIT_ATTEMPTS ]; then
   log "⚠ Cloud-init boot-finished not found after 10 minutes, but proceeding (system may still be initializing)"
 fi
 
+# Create .kube directory and placeholder kubeconfig for Terraform provider validation
+# The real kubeconfig will be written by RKE2 when it's ready
+log "Setting up kubeconfig directory..."
+sudo mkdir -p /root/.kube /home/ubuntu/.kube
+sudo chown -R ubuntu:ubuntu /home/ubuntu/.kube
+sudo chmod 700 /home/ubuntu/.kube
+
+# Create placeholder kubeconfig so Terraform Kubernetes provider can validate it exists
+# This will be overwritten by the actual RKE2 config once the cluster is ready
+sudo tee /home/ubuntu/.kube/rancher-manager.yaml > /dev/null << 'EOF'
+apiVersion: v1
+kind: Config
+metadata:
+  name: rancher-manager
+clusters:
+- cluster:
+    server: https://placeholder:6443
+  name: rancher-manager
+contexts:
+- context:
+    cluster: rancher-manager
+    user: admin@rancher-manager
+  name: rancher-manager
+current-context: rancher-manager
+users:
+- name: admin@rancher-manager
+  user:
+    token: placeholder
+EOF
+
+sudo chown ubuntu:ubuntu /home/ubuntu/.kube/rancher-manager.yaml
+sudo chmod 600 /home/ubuntu/.kube/rancher-manager.yaml
+log "✓ Placeholder kubeconfig created (will be overwritten by RKE2 when ready)"
+
 # Verify network connectivity with retries
 log "Verifying network connectivity..."
 NETWORK_ATTEMPTS=0

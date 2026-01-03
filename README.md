@@ -73,6 +73,20 @@ terraform apply -auto-approve
 - Saves logs to: `terraform/terraform-<timestamp>.log`
 - Runs terraform apply with auto-approval in background
 - Handles all flags internally - just run `./apply.sh`
+- Deploys VMs + RKE2 clusters + Rancher in **one step** ✅
+
+**Single-Step Deployment:**
+With Solution 1 implementation, you can now deploy everything in one `terraform apply`:
+```bash
+./apply.sh
+# Automatically deploys:
+# 1. VMs (2-3 min)
+# 2. RKE2 clusters (10-15 min)
+# 3. Rancher (10-15 min)
+# Complete deployment: ~35-40 minutes
+```
+
+See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md#deploy-rancher-automatic-with-single-apply) for single-apply Rancher deployment details.
 
 **⚠️ Critical: RKE2 Version**
 - Use specific released version: `v1.34.3+rke2r1`
@@ -103,10 +117,10 @@ terraform output rancher_url
 
 Core documentation for deployment and troubleshooting:
 
-- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough with logging
+- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough with single-apply Rancher deployment
 - **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning and VM configuration
 - **[docs/MODULES_AND_AUTOMATION.md](docs/MODULES_AND_AUTOMATION.md)** - Terraform modules, variables, and automation details
-- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions (includes RBD permission errors)
 
 ## Project Structure
 

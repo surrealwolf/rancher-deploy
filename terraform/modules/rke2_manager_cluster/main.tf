@@ -95,10 +95,17 @@ resource "null_resource" "wait_for_secondary_servers" {
   depends_on = [null_resource.wait_for_primary_server]
 }
 
-# Retrieve kubeconfig from primary manager server
+# Retrieve REAL kubeconfig from primary manager server
+# (Overwrites the placeholder kubeconfig created during cloud-init)
 resource "null_resource" "get_kubeconfig" {
   provisioner "local-exec" {
-    command = "mkdir -p ~/.kube && ssh -i ${var.ssh_private_key_path} -o StrictHostKeyChecking=no ${var.ssh_user}@${var.server_ips[0]} 'sudo cat /etc/rancher/rke2/rke2.yaml' | sed 's/127.0.0.1/${var.server_ips[0]}/' > ~/.kube/${var.cluster_name}.yaml && chmod 600 ~/.kube/${var.cluster_name}.yaml && echo '✓ Manager kubeconfig saved to ~/.kube/${var.cluster_name}.yaml'"
+    command = <<-EOT
+      echo "Retrieving actual kubeconfig from RKE2 primary server..."
+      mkdir -p ~/.kube
+      ssh -i ${var.ssh_private_key_path} -o StrictHostKeyChecking=no ${var.ssh_user}@${var.server_ips[0]} 'sudo cat /etc/rancher/rke2/rke2.yaml' | sed 's/127.0.0.1/${var.server_ips[0]}/' > ~/.kube/${var.cluster_name}.yaml
+      chmod 600 ~/.kube/${var.cluster_name}.yaml
+      echo "✓ Manager kubeconfig updated with real credentials"
+    EOT
   }
 
   depends_on = [null_resource.wait_for_secondary_servers]
