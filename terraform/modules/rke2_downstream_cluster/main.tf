@@ -44,17 +44,18 @@ resource "null_resource" "cleanup_known_hosts" {
   }
 }
 
-# Wait for all agent nodes to be ready (RKE2 agent service running)
-# Agents join an external control plane (specified via RKE2_URL env var in cloud-init)
+# Wait for all nodes to be ready (RKE2 agent or server service running)
+# Supports both downstream agent clusters and HA server clusters
 resource "null_resource" "wait_for_agent_nodes" {
   count = length(var.agent_ips)
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "Waiting for RKE2 agent node at ${var.agent_ips[count.index]}..."
+      echo "Waiting for RKE2 node at ${var.agent_ips[count.index]}..."
       for i in {1..180}; do
-        if ssh -i ${var.ssh_private_key_path} -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.ssh_user}@${var.agent_ips[count.index]} 'sudo systemctl is-active --quiet rke2-agent' 2>/dev/null; then
-          echo "✓ Agent node ${var.agent_ips[count.index]} is ready at attempt $i"
+        # Check for either rke2-agent (downstream) or rke2-server (HA cluster)
+        if ssh -i ${var.ssh_private_key_path} -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${var.ssh_user}@${var.agent_ips[count.index]} 'sudo systemctl is-active --quiet rke2-agent || sudo systemctl is-active --quiet rke2-server' 2>/dev/null; then
+          echo "✓ RKE2 node ${var.agent_ips[count.index]} is ready at attempt $i"
           exit 0
         fi
         
@@ -63,7 +64,7 @@ resource "null_resource" "wait_for_agent_nodes" {
         fi
         sleep 2
       done
-      echo "✗ Agent node ${var.agent_ips[count.index]} never became ready"
+      echo "✗ RKE2 node ${var.agent_ips[count.index]} never became ready"
       exit 1
     EOT
   }
