@@ -1,7 +1,7 @@
 #!/bin/bash
-# Terraform apply with automatic logging
-# Usage: ./apply.sh [plan-file]
-# or: ./apply.sh (auto-approve mode)
+# Terraform plan + apply with automatic logging
+# Runs plan in background, then applies
+# Usage: ./apply.sh [terraform-args]
 
 set -e
 
@@ -9,35 +9,40 @@ LOG_FILE="terraform-$(date +%s).log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 echo "═══════════════════════════════════════════════════════════"
-echo "Terraform Apply with Logging"
+echo "Terraform Plan + Apply with Logging"
 echo "═══════════════════════════════════════════════════════════"
 echo "Timestamp: $TIMESTAMP"
 echo "Log Level: DEBUG"
 echo "Log File: terraform/$LOG_FILE"
-echo "Command: terraform apply ${@}"
 echo "───────────────────────────────────────────────────────────"
 
 cd /home/lee/git/rancher-deploy/terraform
 
-# Enable debug logging and run terraform apply
+# Enable debug logging
 export TF_LOG=debug
 export TF_LOG_PATH="$LOG_FILE"
 
-echo "Starting deployment..."
-/usr/bin/terraform apply "$@"
-EXIT_CODE=$?
+# Run plan in foreground
+echo "Starting terraform plan..."
+/usr/bin/terraform plan -out=tfplan "$@"
+PLAN_EXIT=$?
+
+if [ $PLAN_EXIT -ne 0 ]; then
+  echo "Plan failed with exit code $PLAN_EXIT"
+  exit $PLAN_EXIT
+fi
 
 echo ""
-echo "═══════════════════════════════════════════════════════════"
-echo "Deployment Complete"
-echo "═══════════════════════════════════════════════════════════"
-echo "Exit Code: $EXIT_CODE"
-echo "Logs saved to: terraform/$LOG_FILE"
+echo "Plan complete, starting apply in background..."
+echo "PID: $$"
+echo "Logs: terraform/$LOG_FILE"
 echo ""
 
-# Show last 50 lines of log
-echo "Last 50 lines of log:"
-echo "───────────────────────────────────────────────────────────"
-tail -50 "$LOG_FILE"
+# Run apply in background
+/usr/bin/terraform apply tfplan >> "$LOG_FILE" 2>&1 &
+APPLY_PID=$!
 
-exit $EXIT_CODE
+echo "Apply started (PID: $APPLY_PID)"
+echo "You can monitor progress with:"
+echo "  tail -f terraform/$LOG_FILE"
+echo ""

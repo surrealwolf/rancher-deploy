@@ -20,7 +20,7 @@ fi
 # Wait for cloud-init to complete (CRITICAL - system must be fully ready)
 log "Waiting for cloud-init to complete..."
 CLOUD_INIT_ATTEMPTS=0
-MAX_CLOUD_INIT_ATTEMPTS=120  # 10 minutes max (120 × 5 sec = 600 sec)
+MAX_CLOUD_INIT_ATTEMPTS=180  # 15 minutes max (180 × 5 sec = 900 sec)
 
 while [ $CLOUD_INIT_ATTEMPTS -lt $MAX_CLOUD_INIT_ATTEMPTS ]; do
   CLOUD_INIT_ATTEMPTS=$((CLOUD_INIT_ATTEMPTS + 1))
@@ -33,13 +33,13 @@ while [ $CLOUD_INIT_ATTEMPTS -lt $MAX_CLOUD_INIT_ATTEMPTS ]; do
   
   if [ $((CLOUD_INIT_ATTEMPTS % 12)) -eq 0 ]; then
     ELAPSED=$((CLOUD_INIT_ATTEMPTS * 5))
-    log "  Still waiting for cloud-init... attempt $CLOUD_INIT_ATTEMPTS/120 (${ELAPSED}s elapsed)"
+    log "  Still waiting for cloud-init... attempt $CLOUD_INIT_ATTEMPTS/180 (${ELAPSED}s elapsed)"
   fi
   sleep 5
 done
 
 if [ $CLOUD_INIT_ATTEMPTS -ge $MAX_CLOUD_INIT_ATTEMPTS ]; then
-  log "⚠ Cloud-init did not complete after 10 minutes, proceeding anyway"
+  log "⚠ Cloud-init did not complete after 15 minutes, proceeding anyway"
 fi
 
 # Verify network connectivity with retries
@@ -117,31 +117,31 @@ if [ -n "${SERVER_IP}" ] && [ "${SERVER_IP}" != "" ]; then
     log "ℹ Check Terraform logs for token fetch failures"
     exit 1
   fi
-  log "Secondary server detected. Joining existing RKE2 cluster at ${SERVER_IP}..."
+  log "Secondary server detected. Joining existing RKE2 cluster at ${SERVER_IP}:9345..."
   
-  # CRITICAL: Wait for primary API to be responsive before joining
-  log "Waiting for primary RKE2 API (${SERVER_IP}:6443) to be ready..."
+  # CRITICAL: Wait for primary registration API to be responsive before joining (port 9345, not 6443!)
+  log "Waiting for primary RKE2 registration API (${SERVER_IP}:9345) to be ready..."
   API_READY=0
   for i in {1..120}; do
-    if timeout 5 curl -sk https://"${SERVER_IP}":6443/healthz >/dev/null 2>&1; then
-      log "✓ Primary API is healthy at attempt $i"
+    if timeout 5 bash -c "echo > /dev/tcp/${SERVER_IP}/9345" 2>/dev/null; then
+      log "✓ Primary registration port is accessible at attempt $i"
       API_READY=1
       break
     fi
     if [ $((i % 10)) -eq 0 ] || [ $i -le 3 ]; then
-      log "  Primary API check attempt $i/120..."
+      log "  Primary port check attempt $i/120..."
     fi
     sleep 5
   done
   
   if [ $API_READY -eq 0 ]; then
-    log "✗ ERROR: Primary API did not become ready after 10 minutes"
+    log "✗ ERROR: Primary registration API did not become ready after 10 minutes"
     log "ℹ Verify primary RKE2 server is running: systemctl status rke2-server on ${SERVER_IP}"
     log "ℹ Check primary logs: journalctl -u rke2-server on ${SERVER_IP}"
     exit 1
   fi
   
-  export RKE2_URL="https://${SERVER_IP}:6443"
+  export RKE2_URL="https://${SERVER_IP}:9345"
   export RKE2_TOKEN="${SERVER_TOKEN}"
 else
   log "Starting new RKE2 server (primary node)"
