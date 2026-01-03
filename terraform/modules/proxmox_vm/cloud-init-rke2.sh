@@ -18,28 +18,29 @@ if [ -f /usr/local/bin/rke2 ]; then
 fi
 
 # Wait for cloud-init to complete (CRITICAL - system must be fully ready)
+# Use boot-finished file check (more reliable than cloud-init status --wait which can hang)
 log "Waiting for cloud-init to complete..."
 CLOUD_INIT_ATTEMPTS=0
-MAX_CLOUD_INIT_ATTEMPTS=180  # 15 minutes max (180 × 5 sec = 900 sec)
+MAX_CLOUD_INIT_ATTEMPTS=120  # 10 minutes max (120 × 5 sec = 600 sec)
 
 while [ $CLOUD_INIT_ATTEMPTS -lt $MAX_CLOUD_INIT_ATTEMPTS ]; do
   CLOUD_INIT_ATTEMPTS=$((CLOUD_INIT_ATTEMPTS + 1))
   
-  # Check both methods: boot-finished AND cloud-init status
-  if [ -f /var/lib/cloud/instance/boot-finished ] && cloud-init status --wait >/dev/null 2>&1; then
+  # Check for boot-finished file (reliable indicator that cloud-init completed)
+  if [ -f /var/lib/cloud/instance/boot-finished ]; then
     log "✓ Cloud-init completed at attempt $CLOUD_INIT_ATTEMPTS ($(($CLOUD_INIT_ATTEMPTS * 5)) seconds)"
     break
   fi
   
   if [ $((CLOUD_INIT_ATTEMPTS % 12)) -eq 0 ]; then
     ELAPSED=$((CLOUD_INIT_ATTEMPTS * 5))
-    log "  Still waiting for cloud-init... attempt $CLOUD_INIT_ATTEMPTS/180 (${ELAPSED}s elapsed)"
+    log "  Still waiting for cloud-init... attempt $CLOUD_INIT_ATTEMPTS/120 (${ELAPSED}s elapsed)"
   fi
   sleep 5
 done
 
 if [ $CLOUD_INIT_ATTEMPTS -ge $MAX_CLOUD_INIT_ATTEMPTS ]; then
-  log "⚠ Cloud-init did not complete after 15 minutes, proceeding anyway"
+  log "⚠ Cloud-init boot-finished not found after 10 minutes, but proceeding (system may still be initializing)"
 fi
 
 # Verify network connectivity with retries
