@@ -126,7 +126,8 @@ terraform output rancher_url
 │   ├── terraform.tfvars.example # Config template
 │   └── modules/
 │       ├── proxmox_vm/          # VM creation module
-│       └── rke2_cluster/        # RKE2 installation module
+│       ├── rke2_manager_cluster/    # RKE2 manager cluster (3-node HA control plane)
+│       └── rke2_downstream_cluster/ # RKE2 agent-only clusters
 ├── .github/                      # GitHub configuration
 │   └── copilot-instructions.md  # AI assistant guidelines
 └── .gitignore                    # Git ignore rules

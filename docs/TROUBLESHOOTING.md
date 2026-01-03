@@ -275,30 +275,86 @@ Permission denied (publickey).
 **Error:**
 ```
 Connection refused or timeout
+Disconnected from 192.168.1.x port 22
 ```
 
-**Solutions:**
+**Common Causes:**
 
-1. **Wait for VM to fully boot:**
-   - Cloud-init may take 1-2 minutes
+1. **Intrusion Prevention System (IPS) blocking SSH during provisioning**
+   
+   **Symptom**: SSH works initially (script uploads successfully) but connections timeout during active provisioning (package updates, RKE2 installation)
+   
+   **Root Cause**: IPS systems often block repeated SSH connections from automation tools during heavy activity, treating it as potential attack pattern
+   
+   **Solution**:
+   - Contact network team to whitelist Terraform runner IP address
+   - Increase SSH connection thresholds in IPS/firewall rules
+   - Disable IPS temporarily on test networks during deployment
+   - Configure IPS to allow high-frequency SSH from known automation IPs
+   
+   **How to Verify**:
+   ```bash
+   # Check if connections drop after successful script upload:
+   # 1. Script uploads OK (SCP succeeds)
+   # 2. SSH reconnect hangs for 5+ minutes
+   # 3. Eventually either: times out or connects
+   # This pattern = IPS issue
+   
+   # Check firewall logs on network perimeter
+   # Look for: "Connection dropped", "Rate limit exceeded", "Threat detected"
+   ```
+
+2. **VM not fully booted**
+   - Cloud-init may take 1-2 minutes  
    - Check in Proxmox console if services running
+   - Verify cloud-init status: `cloud-init status`
 
-2. **Verify network connectivity:**
+3. **Network connectivity issues**
    ```bash
    ping 192.168.1.100  # From Proxmox host
    ```
 
-3. **Check SSH service:**
+4. **SSH service not running**
    ```bash
    # Via Proxmox console:
    sudo systemctl status ssh
+   sudo journalctl -u ssh -n 50
    ```
 
-4. **Increase wait time in Terraform:**
-   ```hcl
-   # In modules/proxmox_vm/main.tf
-   # Add longer initial delay for cloud-init
-   ```
+**Solutions:**
+
+**Option 1: Fix IPS (Recommended)**
+1. Identify the IPS/firewall blocking connections
+2. Whitelist Terraform runner IP address
+3. Or disable/bypass IPS for test environments during deployment
+4. Retry deployment
+
+**Option 2: Increase Terraform timeouts (Workaround)**
+```hcl
+# In modules/proxmox_vm/main.tf
+provisioner "remote-exec" {
+  inline = ["echo 'VM ready'"]  
+  connection {
+    timeout = "10m"  # Increase from default 5m
+    type    = "ssh"
+    agent   = false
+  }
+}
+```
+
+**Option 3: Stagger provisioners (Workaround)**
+```bash
+# Reduce parallel provisioning to avoid triggering IPS rate limits
+terraform apply -parallelism=1
+```
+
+**Option 4: Verify VM boot completion**
+```bash
+# SSH to a successfully provisioned VM
+ssh ubuntu@192.168.1.100
+cloud-init status --wait
+cloud-init query
+```
 
 ## Kubernetes/Rancher Issues
 
@@ -356,6 +412,50 @@ Always use specific version tags. Check GitHub releases before setting `rke2_ver
 **Error:**
 ```
 curl: (7) Failed to connect to get.rke2.io port 443: Connection refused
+curl: (23) Failed writing body (0 != 1024) [write error]
+```
+
+**Root Causes & Solutions:**
+
+**1. Curl Write Error (Exit Code 23) - File Write Conflict**
+
+**Symptom**: Direct curl works, but fails within the RKE2 provisioning script
+```
+[2026-01-02 20:01:28]   curl exit code: 23, error: 
+```
+
+**Root Cause**: The wrapper script writes itself to `/tmp/rke2-install.sh`, then tries to download the actual RKE2 installer to the same filename. When the script is executing from that path, the OS prevents overwriting the currently-running file.
+
+**Solution**: Use a different filename for the downloaded installer
+```bash
+# WRONG (will fail):
+INSTALLER="/tmp/rke2-install.sh"  # Same as the wrapper script
+timeout 60 curl -sfL https://get.rke2.io -o "$INSTALLER"
+
+# CORRECT (will succeed):
+INSTALLER="/tmp/rke2-installer.sh"  # Different from wrapper
+timeout 60 curl -sfL https://get.rke2.io -o "$INSTALLER"
+```
+
+**How to Verify**:
+```bash
+# SSH to failed VM
+ssh ubuntu@192.168.1.100
+
+# Check if curl works outside the script
+curl -sfL https://get.rke2.io -o /tmp/test.sh && echo "Direct curl works"
+
+# Check curl exit code in script context
+timeout 60 sudo -E bash /tmp/rke2-install.sh 2>&1 | grep "curl exit code"
+```
+
+**Files Affected**: `terraform/modules/proxmox_vm/cloud-init-rke2.sh` (fixed in latest version)
+
+**2. Connection Refused - Network/Firewall Issue**
+
+**Symptom**:
+```
+curl: (7) Failed to connect to get.rke2.io port 443: Connection refused
 ```
 
 **Solutions:**
@@ -387,6 +487,7 @@ curl: (7) Failed to connect to get.rke2.io port 443: Connection refused
 ### Issue: RKE2 server doesn't start after installation
 
 **Symptom:** Installation script completes but `systemctl status rke2-server` shows failed
+
 
 **Solutions:**
 

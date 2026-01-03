@@ -7,6 +7,7 @@ module "rancher_manager" {
       vm_id      = 401 + i
       hostname   = "rancher-manager-${i + 1}"
       ip_address = "${var.clusters["manager"].ip_subnet}.${var.clusters["manager"].ip_start_octet + i}/24"
+      is_first   = (i == 0)
     }
   }
 
@@ -28,6 +29,16 @@ module "rancher_manager" {
   vlan_id     = 14
 
   ssh_private_key = var.ssh_private_key
+
+  # RKE2 configuration for manager cluster
+  rke2_enabled   = true
+  rke2_version   = "v1.34.3+rke2r1"
+  is_rke2_server = true
+
+  # First server (manager-1) starts standalone
+  # Secondary servers (manager-2, manager-3) will fetch token from manager-1 at runtime
+  rke2_server_token = ""
+  rke2_server_ip    = each.value.is_first ? "" : "192.168.14.100" # IP of manager-1
 }
 
 module "nprd_apps" {
@@ -61,34 +72,43 @@ module "nprd_apps" {
 
   ssh_private_key = var.ssh_private_key
 
+  # RKE2 configuration for apps cluster (agents)
+  rke2_enabled      = true
+  rke2_version      = "v1.34.3+rke2r1"
+  is_rke2_server    = false # Apps cluster nodes are agents
+  rke2_server_ip    = split("/", module.rancher_manager["manager-1"].ip_address)[0]
+  rke2_server_token = "dummy-token-will-be-set-by-cloud-init" # Will be retrieved by cloud-init
+
   # Wait for manager nodes to complete before creating nprd-apps nodes
-  depends_on = [module.rancher_manager]
+  depends_on = [module.rancher_manager, module.rke2_manager]
 }
 
 # Deploy RKE2 on manager cluster
+# Uses rke2_manager_cluster module for 3-node HA control plane setup
+# Handles: primary server startup, secondary server joining, kubeconfig retrieval
 module "rke2_manager" {
-  source = "./modules/rke2_cluster"
+  source = "./modules/rke2_manager_cluster"
 
   cluster_name         = "rancher-manager"
   server_ips           = [for vm in module.rancher_manager : split("/", vm.ip_address)[0]]
   ssh_private_key_path = pathexpand(var.ssh_private_key)
   ssh_user             = "ubuntu"
-  rke2_version         = "v1.34.3+rke2r1"
 
   depends_on = [module.rancher_manager]
 }
 
 # Deploy RKE2 on apps cluster
+# Uses rke2_downstream_cluster module for agent-only nodes
+# Handles: agent verification, no kubeconfig retrieval (no API server)
 module "rke2_apps" {
-  source = "./modules/rke2_cluster"
+  source = "./modules/rke2_downstream_cluster"
 
   cluster_name         = "nprd-apps"
-  server_ips           = [for vm in module.nprd_apps : split("/", vm.ip_address)[0]]
+  agent_ips            = [for vm in module.nprd_apps : split("/", vm.ip_address)[0]]
   ssh_private_key_path = pathexpand(var.ssh_private_key)
   ssh_user             = "ubuntu"
-  rke2_version         = "v1.34.3+rke2r1"
 
-  depends_on = [module.nprd_apps]
+  depends_on = [module.nprd_apps, module.rke2_manager]
 }
 
 # Deploy Rancher on manager cluster
@@ -127,7 +147,7 @@ output "rancher_url" {
 output "kubeconfig_paths" {
   value = {
     manager   = module.rke2_manager.kubeconfig_path
-    nprd_apps = module.rke2_apps.kubeconfig_path
+    # Apps cluster has no kubeconfig (agent-only, no API server)
   }
 }
 

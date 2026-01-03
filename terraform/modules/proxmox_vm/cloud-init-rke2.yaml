@@ -1,0 +1,43 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wget
+  - git
+  - jq
+
+runcmd:
+  # Wait for networking to be fully ready
+  - sleep 10
+  
+  # Log RKE2 installation start
+  - echo "Starting RKE2 installation at $(date)" >> /var/log/rke2-install.log
+  
+  # Download and install RKE2
+  - curl -sfL https://get.rke2.io -o /tmp/rke2-install.sh
+  - chmod +x /tmp/rke2-install.sh
+  
+%{ if is_rke2_server ~}
+  # RKE2 Server Node
+  - echo "Installing RKE2 server v${rke2_version}" >> /var/log/rke2-install.log
+  - INSTALL_RKE2_VERSION=${rke2_version} /tmp/rke2-install.sh
+  - systemctl enable --now rke2-server
+  - echo "RKE2 server installation complete at $(date)" >> /var/log/rke2-install.log
+  - echo "Waiting for RKE2 server to be ready..."
+  - for i in {1..60}; do [ -f /var/lib/rancher/rke2/server/node-token ] && echo "Token ready!" && break || (echo "Waiting for token... attempt $i" && sleep 2); done
+%{ else ~}
+  # RKE2 Agent Node  
+  - echo "Installing RKE2 agent v${rke2_version} (server: ${server_ip})" >> /var/log/rke2-install.log
+  - RKE2_URL=https://${server_ip}:6443 RKE2_TOKEN='${server_token}' INSTALL_RKE2_VERSION=${rke2_version} /tmp/rke2-install.sh
+  - systemctl enable --now rke2-agent
+  - echo "RKE2 agent installation complete at $(date)" >> /var/log/rke2-install.log
+%{ endif ~}
+
+write_files:
+  - path: /root/.bashrc
+    append: true
+    content: |
+      export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+      alias k=kubectl

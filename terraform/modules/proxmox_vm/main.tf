@@ -83,6 +83,36 @@ variable "vlan_id" {
   default     = 0
 }
 
+variable "rke2_enabled" {
+  description = "Enable RKE2 installation via cloud-init"
+  type        = bool
+  default     = false
+}
+
+variable "rke2_version" {
+  description = "RKE2 version to install"
+  type        = string
+  default     = ""
+}
+
+variable "rke2_server_token" {
+  description = "RKE2 server token for agents to join"
+  type        = string
+  default     = ""
+}
+
+variable "rke2_server_ip" {
+  description = "RKE2 server IP for agents to join"
+  type        = string
+  default     = ""
+}
+
+variable "is_rke2_server" {
+  description = "Is this the RKE2 server node"
+  type        = bool
+  default     = false
+}
+
 output "vm_id" {
   value = proxmox_virtual_environment_vm.vm.vm_id
 }
@@ -141,7 +171,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
 
   initialization {
     type = "nocloud"
-    
+
     user_account {
       username = "ubuntu"
       # Add SSH public key for ansible/terraform provisioning
@@ -157,6 +187,23 @@ resource "proxmox_virtual_environment_vm" "vm" {
         address = var.ip_address
         gateway = var.gateway
       }
+    }
+  }
+
+  # Apply RKE2 installation via cloud-init provisioner if enabled
+  provisioner "remote-exec" {
+    inline = var.rke2_enabled ? [
+      "cat > /tmp/rke2-install.sh <<'RKEEOF'\n${file("${path.module}/cloud-init-rke2.sh")}\nRKEEOF",
+      "chmod +x /tmp/rke2-install.sh",
+      "IS_RKE2_SERVER=${var.is_rke2_server} RKE2_VERSION=${var.rke2_version} SERVER_IP=${var.rke2_server_ip} SERVER_TOKEN=${var.rke2_server_token} sudo -E bash /tmp/rke2-install.sh"
+    ] : ["echo 'RKE2 disabled, skipping installation'"]
+
+    connection {
+      type        = "ssh"
+      user        = "ubuntu"
+      private_key = file(var.ssh_private_key)
+      host        = split("/", var.ip_address)[0]
+      timeout     = "30m"
     }
   }
 

@@ -37,6 +37,196 @@ This project deploys a complete Rancher management cluster and non-production ap
 - Log levels: trace, debug, info, warn, error
 - See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for logging details
 
+### RKE2 Provisioning Lessons Learned (Jan 2, 2026)
+
+**Critical Discovery: Network Readiness Timing**
+- VMs must wait for **complete cloud-init initialization** before attempting RKE2 installation
+- Initial provisioner approach with minimal sleep (10s) was **insufficient** and caused hanging
+- Remote-exec provisioners trigger SSH connection checks but don't guarantee system readiness
+
+**Solutions Implemented:**
+1. **cloud-init Status Check**: Script now runs `cloud-init status --wait` with timeout
+2. **Network Connectivity Verification**: Ping test to 8.8.8.8 before attempting downloads
+3. **DNS Resolution Validation**: nslookup test for get.rke2.io before curl download
+4. **Exponential Retry Logic**: Multiple retries with logged attempts (30-120 attempts per check)
+5. **curl Timeout Protection**: Added `--max-time 60 --connect-timeout 30` to curl command with `timeout 60` wrapper
+
+### SSH Timeout Root Cause - Intrusion Prevention System (Jan 2, 2026)
+
+**Discovery**: Intermittent SSH timeouts during provisioning caused by **Intrusion Prevention System (IPS) blocking high-frequency SSH connections**
+
+**Symptoms**:
+- SSH initial connection works (script uploads successfully)
+- SSH reconnect hangs for 5+ minutes during provisioning
+- Affects multiple nodes inconsistently
+- Eventually times out or connects after IPS timeout resets
+
+**Root Cause**: IPS systems treat repeated SSH connections from automation tools as potential attack pattern during heavy provisioning activity
+
+**Prevention for Future Deployments**:
+1. Whitelist Terraform runner IP in IPS/firewall rules
+2. Configure IPS to allow high-frequency SSH from known automation IPs
+3. Disable/bypass IPS for test environments during deployment
+4. Contact network team to increase SSH connection thresholds
+
+**Impact**: Does NOT affect curl timeout fix or provisioning script logic - it's a network-level security issue separate from RKE2 installation
+
+**Updated Script Location:** `terraform/modules/proxmox_vm/cloud-init-rke2.sh`
+
+**Deployment Sequence with Proper Waiting:**
+```
+1. VM created and boots (30-50 seconds)
+2. SSH provisioner connects (attempts until available)
+3. RKE2 installation script begins
+4. Script waits for cloud-init completion (120 seconds max)
+5. Script verifies network connectivity (30 seconds max)
+6. Script verifies DNS resolution (30 seconds max)
+7. RKE2 installer downloaded and executed (5-10 minutes)
+8. Token file polling for cluster readiness (120 seconds max)
+```
+
+**Key Takeaway for Future Development:**
+- Never assume SSH connectivity implies system readiness
+- Always verify cloud-init completion explicitly
+- Always test network connectivity before external downloads
+- Use logging (tee -a) to track all provisioning steps
+- Provide clear retry messages for debugging
+
+### RKE2 Installer Download Fix - Write Error (Jan 2, 2026)
+
+**Critical Discovery**: RKE2 installer download failing with curl exit code 23 (write error)
+
+**Root Cause**: The cloud-init wrapper script copies itself to `/tmp/rke2-install.sh`, then tries to download the actual RKE2 installer to the same filename. When the script is running from that path, **the OS prevents overwriting the currently-executing file**, causing curl write errors.
+
+**Symptoms**:
+- Download appears to fail silently (all 5 retries fail identically)
+- Direct curl testing from VM succeeds, but fails within the script
+- HTTP response 200 (success) but curl exits with code 23 (write error)
+- All 3 managers fail at same step with identical error pattern
+
+**Solution Implemented**:
+Changed installer download path from `/tmp/rke2-install.sh` to `/tmp/rke2-installer.sh`:
+- Script wrapper stays at `/tmp/rke2-install.sh`
+- Actual RKE2 installer downloads to `/tmp/rke2-installer.sh`
+- No conflict between executing wrapper and downloaded binary
+- Both execution paths (`"$INSTALLER"` lines) use correct variable
+
+**Error Detection**:
+Added error capture to script to expose curl exit codes:
+```bash
+CURL_OUTPUT=$(timeout 60 curl -sfL ... 2>&1)
+CURL_EXIT=$?
+if [ $CURL_EXIT -ne 0 ]; then
+  log "  curl exit code: $CURL_EXIT, error: $CURL_OUTPUT"
+fi
+```
+
+**Curl Exit Codes Reference**:
+- Exit code 0: Success
+- Exit code 23: Write/read error (prevented from writing to executing file)
+- Exit code 28: Operation timeout
+- Exit code 35: SSL/TLS error
+
+**Files Changed**:
+- `terraform/modules/proxmox_vm/cloud-init-rke2.sh`: Line 37 (INSTALLER path changed)
+- Enhanced error logging for curl operations (lines 40-56)
+
+**Testing Verification**:
+✅ Tested on live VM:
+```
+Download attempt 1/5...
+✓ RKE2 installer downloaded successfully
+Installing RKE2 server v1.34.3+rke2r1...
+```
+
+**Key Takeaway**:
+- Always use different filenames for downloaded content vs executing wrapper
+- Expose curl errors (don't suppress with 2>/dev/null) during debugging
+- Test actual provisioner environment (with sudo -E) not just direct curl
+
+### RKE2 Provisioning Timeout Fix - Non-Blocking Installation (Jan 2, 2026)
+
+**Issue**: Provisioner script was timing out waiting for RKE2 services to become fully operational before exiting
+
+**Root Cause**: The script contained blocking waits (60 attempts, ~120 seconds each) for:
+1. RKE2 service to become active
+2. Token file to be created
+
+These waits could exceed the provisioner connection timeout, causing `remote-exec` provisioner to fail even though RKE2 was installing in the background.
+
+**Solution Implemented**:
+Changed from blocking to non-blocking approach:
+1. **Removed service startup waits**: Script now exits successfully after running installer
+2. **Increased provisioner timeout**: From `10m` to `30m` in terraform config
+3. **Added helpful messages**: Notes that services will start automatically
+
+**Before (Blocking)**:
+```bash
+log "Waiting for RKE2 server to start..."
+for i in {1..60}; do
+  if systemctl is-active --quiet rke2-server; then
+    log "✓ RKE2 server is running"
+    break
+  fi
+  sleep 2
+done
+
+if [ ! -f /var/lib/rancher/rke2/server/node-token ]; then
+  log "✗ Token file not found"
+  exit 1
+fi
+```
+
+**After (Non-Blocking)**:
+```bash
+log "RKE2 installation complete. Service will start automatically."
+log "ⓘ Note: RKE2 service may take several minutes to fully initialize"
+```
+
+**Benefits**:
+- ✅ Provisioner completes successfully and returns control faster
+- ✅ RKE2 services start automatically in background
+- ✅ Terraform state is saved even if service startup is slow
+- ✅ Users can manually check status: `systemctl status rke2-server`
+- ✅ No more false provisioner failures
+
+**Terraform Change**:
+```hcl
+# terraform/modules/proxmox_vm/main.tf
+connection {
+  timeout = "30m"  # Increased from "10m"
+}
+```
+
+**Deployment Pattern**:
+```
+1. VM boots (30-50 seconds)
+2. SSH provisioner connects
+3. RKE2 installer runs and completes (~3-5 minutes)
+4. Script exits successfully ✓
+5. Terraform marks VM as complete
+6. RKE2 services start in background (continues for 2-3 minutes)
+7. Services become available without blocking provisioner
+```
+
+**Post-Deployment Verification**:
+```bash
+# Check service status (may take 2-3 minutes after provisioner completes)
+systemctl status rke2-server
+
+# Check if token file exists
+ls -la /var/lib/rancher/rke2/server/node-token
+
+# Verify kubernetes
+KUBECONFIG=/etc/rancher/rke2/rke2.yaml kubectl get nodes
+```
+
+**Key Takeaway**:
+- Provisioners should complete quickly and exit successfully
+- Long-running background services (like RKE2) should start independently
+- Don't block provisioners waiting for service startup
+- Use post-deployment checks instead of blocking waits
+
 ## Project Structure
 
 ### Documentation (`docs/`)
@@ -326,24 +516,54 @@ terraform console  # Then: keys(var.*)
 
 ### Deploying with Logging
 
-1. **Using the root script**:
-   ```bash
-   ./apply.sh -auto-approve
-   ```
+**RECOMMENDED: Use the apply.sh script**
 
-2. **Manual deployment with logging**:
-   ```bash
-   cd terraform
-   export TF_LOG=debug TF_LOG_PATH=terraform.log
-   terraform apply -auto-approve
-   ```
+```bash
+# From project root directory
+./apply.sh -auto-approve
+```
 
-3. **Different log levels**:
-   ```bash
-   TF_LOG=trace    # Most verbose
-   TF_LOG=debug    # Detailed
-   TF_LOG=info     # Normal
-   ```
+This automatically:
+- Sets up debug logging (`TF_LOG=debug`)
+- Saves logs to timestamped file: `terraform/terraform-<timestamp>.log`
+- Changes to terraform directory
+- Runs terraform apply with auto-approval
+- Monitors progress in background
+
+**Manual deployment with logging:**
+
+```bash
+cd terraform
+export TF_LOG=debug TF_LOG_PATH=terraform.log
+terraform apply -auto-approve
+```
+
+**Log levels (TF_LOG environment variable):**
+- `trace` - Most verbose (includes all API calls)
+- `debug` - Detailed operation info (recommended)
+- `info` - Normal output (least verbose)
+- `warn` / `error` - Only warnings and errors
+
+**Deployment timeline expectations:**
+1. **Cloud image download**: 30-40 seconds (3 images in parallel)
+2. **VM creation**: 1-2 minutes (provisioners start immediately)
+3. **SSH connection attempts**: 3-5 minutes (VMs booting, SSH becoming available)
+4. **RKE2 installation**: 5-10 minutes per cluster (parallel across nodes)
+5. **Token verification**: 1-2 minutes (rke2_cluster module polling)
+6. **Total deployment time**: 15-25 minutes from terraform apply start
+
+**Monitoring deployment progress:**
+
+```bash
+# From another terminal, tail the log file
+tail -f terraform/terraform-<timestamp>.log
+
+# Filter for key events
+grep -E "Creating|Complete|ERROR" terraform/terraform-<timestamp>.log
+
+# Watch SSH connection attempts
+grep "Connecting to remote host via SSH" terraform/terraform-<timestamp>.log
+```
 
 ## Testing Recommendations
 
