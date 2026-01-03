@@ -38,8 +38,6 @@ This project deploys a complete Rancher management cluster and non-production ap
 - See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for logging details
 
 ### RKE2 Provisioning Lessons Learned (Jan 2, 2026)
-
-**Critical Discovery: Network Readiness Timing**
 - VMs must wait for **complete cloud-init initialization** before attempting RKE2 installation
 - Initial provisioner approach with minimal sleep (10s) was **insufficient** and caused hanging
 - Remote-exec provisioners trigger SSH connection checks but don't guarantee system readiness
@@ -285,6 +283,78 @@ ssh ubuntu@192.168.14.101 'sudo cat /var/lib/rancher/rke2/server/config.yaml' | 
 
 **Key Takeaway**: 
 Sequential provisioning solves HA cluster formation by ensuring primaries are ready before secondaries start, not by hoping parallel deployment timing works out.
+
+### CRITICAL FIX (Jan 4, 2026): RKE2 Registration Port 9345 vs API Port 6443
+
+**Problem (Confirmed in Live Deployment)**:
+Split-brain etcd cluster where secondary managers weren't joining primary:
+- All 3 managers appeared "running" (services active)
+- Only manager-1 visible in kubectl
+- manager-2 and manager-3 formed independent single-node clusters
+- `kubectl get nodes` from any node showed different node list (classic split-brain symptom)
+- Cause: Cloud-init script used wrong port for RKE2_URL
+
+**Root Cause Discovered**:
+RKE2 uses **TWO different ports** with different purposes:
+1. **Port 9345**: RKE2 server registration endpoint (where secondary nodes register to JOIN cluster)
+2. **Port 6443**: Kubernetes API server (read-only access for kubectl, used AFTER cluster formed)
+
+The cloud-init script was configured with:
+```bash
+# WRONG - uses API port, not registration port:
+export RKE2_URL="https://${SERVER_IP}:6443"
+```
+
+Secondary nodes tried to join on port 6443 (Kubernetes API), which only answers API requests after cluster is formed. During initialization, port 6443 is not listening for registration, so secondary nodes timeout and bootstrap as **standalone clusters**.
+
+**Evidence from Official RKE2 Documentation**:
+From https://docs.rke2.io/install/ha:
+> "The `rke2 server` process listens on port `9345` for new nodes to register with the cluster."
+
+**Solution: Use Port 9345 for Server Registration**
+
+Updated cloud-init script with correct port:
+```bash
+# CORRECT - uses registration port for joining:
+export RKE2_URL="https://${SERVER_IP}:9345"
+```
+
+**Manual Verification of Fix**:
+Manually configured manager-2 to join manager-1 with correct configuration:
+```bash
+# On manager-2:
+echo "server: https://192.168.14.100:9345" | sudo tee /etc/rancher/rke2/config.yaml
+echo "token: <token-from-manager-1>" | sudo tee -a /etc/rancher/rke2/config.yaml
+sudo systemctl start rke2-server
+```
+
+**Result**: manager-2 immediately joined manager-1 cluster and appeared in `kubectl get nodes` as Ready
+- Before fix: Only manager-1 visible (split-brain)
+- After fix: Both manager-1 and manager-2 visible, both showing Ready status ✓
+
+**Port Purpose Reference**:
+- **9345**: RKE2 server registration/join port (internal cluster communication)
+  - Used by: Secondary RKE2 servers registering with primary
+  - Used by: RKE2 agents joining the cluster
+  - Used when: During node provisioning and initialization
+  
+- **6443**: Kubernetes API server (external API access)
+  - Used by: kubectl commands
+  - Used by: External clients connecting to Kubernetes
+  - Used when: After cluster is fully initialized
+
+- **Other important ports**:
+  - 2379/2380: etcd client/peer (internal cluster communication)
+  - 10250: kubelet (internal node communication)
+  - 6443: Kubernetes API (external)
+
+**Files Changed**:
+- `terraform/modules/proxmox_vm/cloud-init-rke2.sh` - Line 123: Changed RKE2_URL from port 6443 to 9345
+  - Also updated health check from HTTPS GET to TCP connectivity test on port 9345
+  - Increased cloud-init timeout from 120 attempts (10 min) to 180 attempts (15 min) for more stability
+
+**Key Takeaway**:
+Infrastructure documentation and port specifications are CRITICAL. Always verify port purposes in official documentation before making configuration decisions. A single wrong port caused silent cluster join failure that appeared "running" but was completely broken.
 
 ## Project Structure
 

@@ -73,6 +73,13 @@ terraform apply -auto-approve
 - Do NOT use `"latest"` - it will fail (not a downloadable release)
 - Check available versions at https://github.com/rancher/rke2/tags
 
+**⚠️ Critical: RKE2 Port Configuration (HA Clusters)**
+- RKE2 uses **port 9345** for server registration (secondary nodes joining cluster)
+- RKE2 uses **port 6443** for Kubernetes API (kubectl, only after cluster initialized)
+- Configuration automatically handled by terraform cloud-init script
+- For manual cluster joining: `RKE2_URL="https://<primary>:9345"` (NOT :6443)
+- See [RKE2 HA Documentation](https://docs.rke2.io/install/ha) for details
+
 ### 3. Verify Deployment
 
 ```bash
