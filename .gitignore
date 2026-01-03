@@ -35,6 +35,11 @@ example.tfvars
 *.log
 terraform_deploy.log
 
+# RKE2 Tokens (sensitive)
+.manager-token
+.apps-token
+*-token
+
 # Kubeconfigs
 .kube/
 kubeconfig*

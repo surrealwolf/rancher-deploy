@@ -207,7 +207,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
       user        = "ubuntu"
       private_key = file(var.ssh_private_key)
       host        = split("/", var.ip_address)[0]
-      timeout     = "30m"
+      timeout     = "60m"
     }
   }
 

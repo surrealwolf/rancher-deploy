@@ -17,14 +17,48 @@ if [ -f /usr/local/bin/rke2 ]; then
   exit 0
 fi
 
-# Wait for cloud-init completion (with timeout to prevent hanging)
+# Wait for cloud-init to complete (CRITICAL - system must be fully ready)
 log "Waiting for cloud-init to complete..."
-timeout 120 cloud-init status --wait 2>/dev/null || log "⚠ Cloud-init wait timed out, proceeding anyway"
+CLOUD_INIT_ATTEMPTS=0
+MAX_CLOUD_INIT_ATTEMPTS=120  # 10 minutes max (120 × 5 sec = 600 sec)
 
-# Verify network connectivity
+while [ $CLOUD_INIT_ATTEMPTS -lt $MAX_CLOUD_INIT_ATTEMPTS ]; do
+  CLOUD_INIT_ATTEMPTS=$((CLOUD_INIT_ATTEMPTS + 1))
+  
+  # Check both methods: boot-finished AND cloud-init status
+  if [ -f /var/lib/cloud/instance/boot-finished ] && cloud-init status --wait >/dev/null 2>&1; then
+    log "✓ Cloud-init completed at attempt $CLOUD_INIT_ATTEMPTS ($(($CLOUD_INIT_ATTEMPTS * 5)) seconds)"
+    break
+  fi
+  
+  if [ $((CLOUD_INIT_ATTEMPTS % 12)) -eq 0 ]; then
+    ELAPSED=$((CLOUD_INIT_ATTEMPTS * 5))
+    log "  Still waiting for cloud-init... attempt $CLOUD_INIT_ATTEMPTS/120 (${ELAPSED}s elapsed)"
+  fi
+  sleep 5
+done
+
+if [ $CLOUD_INIT_ATTEMPTS -ge $MAX_CLOUD_INIT_ATTEMPTS ]; then
+  log "⚠ Cloud-init did not complete after 10 minutes, proceeding anyway"
+fi
+
+# Verify network connectivity with retries
 log "Verifying network connectivity..."
-if ! timeout 30 ping -c 1 8.8.8.8 >/dev/null 2>&1; then
-  log "⚠ Network verification failed, proceeding anyway"
+NETWORK_ATTEMPTS=0
+while [ $NETWORK_ATTEMPTS -lt 5 ]; do
+  NETWORK_ATTEMPTS=$((NETWORK_ATTEMPTS + 1))
+  if timeout 10 ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+    log "✓ Network connectivity verified"
+    break
+  fi
+  if [ $NETWORK_ATTEMPTS -lt 5 ]; then
+    log "  Network not ready, retry $NETWORK_ATTEMPTS/5..."
+    sleep 2
+  fi
+done
+
+if [ $NETWORK_ATTEMPTS -ge 5 ]; then
+  log "⚠ Network verification failed after 5 attempts, proceeding anyway"
 fi
 
 # Update packages
