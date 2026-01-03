@@ -5,14 +5,6 @@ terraform {
       source  = "bpg/proxmox"
       version = "~> 0.90"
     }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.9"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.23"
-    }
   }
 }
 
@@ -30,18 +22,5 @@ provider "proxmox" {
   ssh {
     agent    = true
     username = "root"
-  }
-}
-
-# Kubernetes and Helm providers for Rancher deployment
-# Only configured when needed via the install_rancher flag
-# When install_rancher = false, these providers won't be used and won't validate kubeconfig existence
-provider "kubernetes" {
-  config_path = var.install_rancher ? pathexpand("~/.kube/rancher-manager.yaml") : ""
-}
-
-provider "helm" {
-  kubernetes {
-    config_path = var.install_rancher ? pathexpand("~/.kube/rancher-manager.yaml") : ""
   }
 }

@@ -298,7 +298,7 @@ module "rancher_deployment" {
 
   cluster_name         = "rancher-manager"
   node_count           = 3
-  kubeconfig_path      = "~/.kube/rancher-manager.yaml"
+  kubeconfig_path      = module.rke2_manager.kubeconfig_path
   install_rancher      = var.install_rancher
   rancher_version      = var.rancher_version
   rancher_hostname     = var.rancher_hostname

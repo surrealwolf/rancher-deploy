@@ -1,12 +1,8 @@
 terraform {
   required_providers {
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.23"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.9"
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
     }
   }
 }
@@ -64,72 +60,102 @@ output "cluster_name" {
 }
 
 # Install cert-manager for Rancher (only if deploying Rancher)
-resource "helm_release" "cert_manager" {
-  count            = var.install_rancher ? 1 : 0
-  name             = "cert-manager"
-  repository       = "https://charts.jetstack.io"
-  chart            = "cert-manager"
-  namespace        = "cert-manager"
-  create_namespace = true
-  version          = var.cert_manager_version
-
-  set {
-    name  = "installCRDs"
-    value = "true"
-  }
-
-  depends_on = [kubernetes_namespace.rancher]
-}
-
-# Create rancher namespace (only if deploying Rancher)
-resource "kubernetes_namespace" "rancher" {
+# Uses local-exec with helm CLI to handle self-signed certificates
+resource "null_resource" "install_cert_manager" {
   count = var.install_rancher ? 1 : 0
-  metadata {
-    name = "cattle-system"
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "Installing cert-manager..."
+      export KUBECONFIG="${var.kubeconfig_path}"
+      
+      # Add Jetstack helm repo
+      helm repo add jetstack https://charts.jetstack.io --force-update || true
+      helm repo update
+      
+      # Create namespace
+      kubectl create namespace cert-manager --insecure-skip-tls-verify 2>/dev/null || true
+      
+      # Install cert-manager with self-signed cert support
+      helm install cert-manager jetstack/cert-manager \
+        --namespace cert-manager \
+        --insecure-skip-tls-verify \
+        --set installCRDs=true \
+        --version ${var.cert_manager_version} \
+        --wait \
+        --timeout 10m
+      
+      echo "✓ cert-manager installed"
+    EOT
+    
+    environment = {
+      KUBECONFIG = pathexpand(var.kubeconfig_path)
+    }
   }
 }
 
 # Install Rancher (only on manager cluster)
-resource "helm_release" "rancher" {
-  count      = var.install_rancher ? 1 : 0
-  name       = "rancher"
-  repository = "https://releases.rancher.com/server-charts/stable"
-  chart      = "rancher"
-  namespace  = kubernetes_namespace.rancher[0].metadata[0].name
-  version    = var.rancher_version
+# Uses local-exec with helm CLI to handle self-signed certificates
+resource "null_resource" "install_rancher" {
+  count = var.install_rancher ? 1 : 0
 
-  set {
-    name  = "hostname"
-    value = var.rancher_hostname
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "Installing Rancher..."
+      export KUBECONFIG="${var.kubeconfig_path}"
+      
+      # Add Rancher helm repo
+      helm repo add rancher-stable https://releases.rancher.com/server-charts/stable --force-update || true
+      helm repo update
+      
+      # Create namespace
+      kubectl create namespace cattle-system --insecure-skip-tls-verify 2>/dev/null || true
+      
+      # Install Rancher with self-signed cert support
+      helm install rancher rancher-stable/rancher \
+        --namespace cattle-system \
+        --insecure-skip-tls-verify \
+        --set hostname=${var.rancher_hostname} \
+        --set replicas=3 \
+        --set bootstrapPassword=${var.rancher_password} \
+        --version ${var.rancher_version} \
+        --wait \
+        --timeout 15m
+      
+      echo "✓ Rancher installed at https://${var.rancher_hostname}"
+      
+      # Get bootstrap secret
+      sleep 10
+      BOOTSTRAP_PWD=$(kubectl get secret --namespace cattle-system bootstrap-secret \
+        -o go-template='{{.data.bootstrapPassword|base64decode}}' \
+        --insecure-skip-tls-verify 2>/dev/null || echo "check manually")
+      echo ""
+      echo "Rancher bootstrap password: $BOOTSTRAP_PWD"
+    EOT
+    
+    environment = {
+      KUBECONFIG = pathexpand(var.kubeconfig_path)
+    }
   }
 
-  set {
-    name  = "replicas"
-    value = 3
-  }
-
-  set {
-    name  = "bootstrapPassword"
-    value = var.rancher_password
-  }
-
-  set {
-    name  = "ingress.tls.source"
-    value = "letsEncrypt"
-  }
-
-  set {
-    name  = "letsEncrypt.email"
-    value = "rancher-admin@example.com"
-  }
-
-  depends_on = [helm_release.cert_manager]
+  depends_on = [null_resource.install_cert_manager]
 }
 
-# Create monitoring namespace for agent deployments (only if deploying Rancher)
-resource "kubernetes_namespace" "monitoring" {
+# Optional: Create monitoring namespace for future agent deployments
+resource "null_resource" "create_monitoring_namespace" {
   count = var.install_rancher ? 1 : 0
-  metadata {
-    name = "cattle-monitoring-system"
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      export KUBECONFIG="${var.kubeconfig_path}"
+      kubectl create namespace cattle-monitoring-system --insecure-skip-tls-verify 2>/dev/null || true
+      echo "✓ Monitoring namespace ready"
+    EOT
+    
+    environment = {
+      KUBECONFIG = pathexpand(var.kubeconfig_path)
+    }
   }
+
+  depends_on = [null_resource.install_rancher]
 }
