@@ -563,17 +563,19 @@ terraform state show <resource>  # Show resource details
 
 ### For Users
 1. Start: [README.md](../README.md)
-2. Deploy: [DEPLOYMENT_GUIDE.md](../docs/DEPLOYMENT_GUIDE.md)
-3. Cloud Images: [CLOUD_IMAGE_SETUP.md](../docs/CLOUD_IMAGE_SETUP.md)
-4. Understand: [MODULES_AND_AUTOMATION.md](../docs/MODULES_AND_AUTOMATION.md)
-5. Troubleshoot: [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
+2. DNS Setup: [DNS_CONFIGURATION.md](../docs/DNS_CONFIGURATION.md)
+3. Deploy: [DEPLOYMENT_GUIDE.md](../docs/DEPLOYMENT_GUIDE.md)
+4. Cloud Images: [CLOUD_IMAGE_SETUP.md](../docs/CLOUD_IMAGE_SETUP.md)
+5. Understand: [MODULES_AND_AUTOMATION.md](../docs/MODULES_AND_AUTOMATION.md)
+6. Troubleshoot: [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
 
 ### For Developers
 1. Review: [MODULES_AND_AUTOMATION.md](../docs/MODULES_AND_AUTOMATION.md)
 2. Cloud Images: [CLOUD_IMAGE_SETUP.md](../docs/CLOUD_IMAGE_SETUP.md)
 3. Deploy: [DEPLOYMENT_GUIDE.md](../docs/DEPLOYMENT_GUIDE.md)
-4. Debug: [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
-5. Reference: This file (.github/copilot-instructions.md)
+4. DNS: [DNS_CONFIGURATION.md](../docs/DNS_CONFIGURATION.md)
+5. Debug: [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
+6. Reference: This file (.github/copilot-instructions.md)
 
 ## Support and Resources
 

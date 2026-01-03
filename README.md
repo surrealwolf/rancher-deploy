@@ -117,6 +117,7 @@ terraform output rancher_url
 
 Core documentation for deployment and troubleshooting:
 
+- **[docs/DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md)** - DNS records required for Rancher and Kubernetes API access
 - **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough with single-apply Rancher deployment
 - **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning and VM configuration
 - **[docs/MODULES_AND_AUTOMATION.md](docs/MODULES_AND_AUTOMATION.md)** - Terraform modules, variables, and automation details
@@ -132,6 +133,7 @@ Core documentation for deployment and troubleshooting:
 ├── CODE_OF_CONDUCT.md            # Community guidelines
 ├── CONTRIBUTING.md               # Development guidelines
 ├── docs/                         # Core documentation
+│   ├── DNS_CONFIGURATION.md      # DNS records for Rancher and Kubernetes API
 │   ├── DEPLOYMENT_GUIDE.md       # Complete deployment walkthrough
 │   ├── CLOUD_IMAGE_SETUP.md      # Cloud image provisioning
 │   ├── MODULES_AND_AUTOMATION.md # Terraform modules and variables
