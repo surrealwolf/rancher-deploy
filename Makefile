@@ -1,4 +1,4 @@
-.PHONY: help init plan apply destroy validate fmt clean check-prereqs
+.PHONY: help init plan apply destroy destroy-quick validate fmt clean check-prereqs
 
 # Terraform directory
 TF_DIR := terraform
@@ -13,8 +13,9 @@ help:
 	@echo "Terraform Operations:"
 	@echo "  init                 - Initialize Terraform"
 	@echo "  plan                 - Show infrastructure plan"
-	@echo "  apply                - Deploy infrastructure (both clusters)"
-	@echo "  destroy              - Destroy infrastructure"
+	@echo "  apply                - Deploy infrastructure with logging"
+	@echo "  destroy              - Destroy infrastructure (interactive)"
+	@echo "  destroy-quick        - Destroy without confirmation"
 	@echo "  validate             - Validate Terraform configuration"
 	@echo "  fmt                  - Format Terraform files"
 	@echo "  clean                - Remove Terraform cache and state"
@@ -39,16 +40,17 @@ plan: init
 	@cd $(TF_DIR) && terraform plan -out=tfplan
 
 apply:
-	@cd $(TF_DIR) && terraform apply tfplan
+	@./apply.sh
 
 destroy:
-	@echo "Warning: This will destroy ALL infrastructure"
-	@read -p "Are you sure? (type 'yes'): " confirm; \
-	if [ "$$confirm" = "yes" ]; then \
-		cd $(TF_DIR) && terraform destroy; \
-	else \
-		echo "Aborted"; \
-	fi
+	@./destroy.sh
+
+destroy-quick:
+	@echo "⚠️  Quick destroy without confirmation (use with caution!)"
+	@cd $(TF_DIR) && terraform destroy -auto-approve
+	@rm -fv $(TF_DIR)/.manager-token 2>/dev/null || true
+	@rm -fv ~/.kube/rancher-manager.yaml 2>/dev/null || true
+	@echo "✓ Infrastructure destroyed"
 
 validate:
 	@cd $(TF_DIR) && terraform validate
