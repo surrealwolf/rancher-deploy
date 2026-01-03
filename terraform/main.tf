@@ -301,3 +301,24 @@ module "rke2_apps" {
     module.nprd_apps_additional
   ]
 }
+
+# ============================================================================
+# RANCHER DEPLOYMENT - ON MANAGER CLUSTER ONLY
+# Installs cert-manager and Rancher via Helm after manager cluster is ready
+# ============================================================================
+
+module "rancher_deployment" {
+  source = "./modules/rancher_cluster"
+
+  cluster_name      = "rancher-manager"
+  node_count        = 3
+  kubeconfig_path   = "~/.kube/rancher-manager.yaml"
+  install_rancher   = var.install_rancher
+  rancher_version   = var.rancher_version
+  rancher_hostname  = var.rancher_hostname
+  rancher_password  = var.rancher_password
+
+  depends_on = [
+    module.rke2_manager
+  ]
+}

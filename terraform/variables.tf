@@ -71,6 +71,12 @@ variable "rancher_hostname" {
   type        = string
 }
 
+variable "install_rancher" {
+  description = "Whether to install Rancher on the manager cluster"
+  type        = bool
+  default     = false
+}
+
 variable "deploy_rancher" {
   description = "Whether to deploy Rancher after RKE2 is ready"
   type        = bool

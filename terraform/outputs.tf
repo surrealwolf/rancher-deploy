@@ -45,6 +45,18 @@ output "rancher_manager_url" {
   value       = "https://${var.rancher_hostname}"
 }
 
+output "rancher_deployment_status" {
+  description = "Rancher deployment information"
+  value = {
+    enabled      = var.install_rancher
+    hostname     = var.rancher_hostname
+    version      = var.rancher_version
+    access_url   = var.install_rancher ? "https://${var.rancher_hostname}" : "Not deployed"
+    admin_user   = "admin"
+    bootstrap_pw = var.install_rancher ? "Use rancher_password from tfvars" : "N/A"
+  }
+}
+
 output "manager_kubeconfig_path" {
   description = "Path to manager cluster kubeconfig"
   value       = module.rke2_manager.kubeconfig_path
