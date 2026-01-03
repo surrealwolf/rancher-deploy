@@ -563,15 +563,15 @@ terraform state show <resource>  # Show resource details
 
 ### For Users
 1. Start: [README.md](../README.md)
-2. Setup: [GETTING_STARTED.md](../docs/GETTING_STARTED.md)
-3. Deploy: [TERRAFORM_GUIDE.md](../docs/TERRAFORM_GUIDE.md)
-4. Understand: [ARCHITECTURE.md](../docs/ARCHITECTURE.md)
+2. Deploy: [DEPLOYMENT_GUIDE.md](../docs/DEPLOYMENT_GUIDE.md)
+3. Cloud Images: [CLOUD_IMAGE_SETUP.md](../docs/CLOUD_IMAGE_SETUP.md)
+4. Understand: [MODULES_AND_AUTOMATION.md](../docs/MODULES_AND_AUTOMATION.md)
 5. Troubleshoot: [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
 
 ### For Developers
-1. Review: [ARCHITECTURE.md](../docs/ARCHITECTURE.md)
-2. Setup: [GETTING_STARTED.md](../docs/GETTING_STARTED.md)
-3. Modify: [TERRAFORM_GUIDE.md](../docs/TERRAFORM_GUIDE.md)
+1. Review: [MODULES_AND_AUTOMATION.md](../docs/MODULES_AND_AUTOMATION.md)
+2. Cloud Images: [CLOUD_IMAGE_SETUP.md](../docs/CLOUD_IMAGE_SETUP.md)
+3. Deploy: [DEPLOYMENT_GUIDE.md](../docs/DEPLOYMENT_GUIDE.md)
 4. Debug: [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
 5. Reference: This file (.github/copilot-instructions.md)
 
@@ -585,7 +585,7 @@ terraform state show <resource>  # Show resource details
 
 ### Internal Documentation
 - Project README: [../README.md](../README.md)
-- Getting Started: [../docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md)
+- Deployment: [../docs/DEPLOYMENT_GUIDE.md](../docs/DEPLOYMENT_GUIDE.md)
 - All guides: [../docs/](../docs/)
 - **Gotchas**: TLS validation can be disabled via `proxmox_tls_insecure` (for lab/dev only)
 
