@@ -1,4 +1,19 @@
 # ============================================================================
+# DOWNLOAD UBUNTU CLOUD IMAGE ONCE AT ROOT LEVEL
+# Reused by all VM modules instead of downloading multiple times
+# ============================================================================
+
+resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
+  content_type        = "import"
+  datastore_id        = "images-import"
+  node_name           = var.proxmox_node
+  url                 = var.ubuntu_cloud_image_url
+  file_name           = "ubuntu-noble-cloudimg-amd64.qcow2"
+  overwrite           = true
+  overwrite_unmanaged = true
+}
+
+# ============================================================================
 # RANCHER MANAGER CLUSTER - PRIMARY NODE (manager-1)
 # Builds first, initializes RKE2, generates cluster token
 # ============================================================================
@@ -6,11 +21,12 @@
 module "rancher_manager_primary" {
   source = "./modules/proxmox_vm"
 
-  vm_name         = "rancher-manager-1"
-  vm_id           = 401
-  proxmox_node    = var.proxmox_node
-  cloud_image_url = var.ubuntu_cloud_image_url
-  datastore_id    = var.clusters["manager"].storage
+  vm_name               = "rancher-manager-1"
+  vm_id                 = 401
+  proxmox_node          = var.proxmox_node
+  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image.datastore_id
+  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image.file_name
+  datastore_id          = var.clusters["manager"].storage
 
   cpu_cores    = var.clusters["manager"].cpu_cores
   memory_mb    = var.clusters["manager"].memory_mb
@@ -32,6 +48,10 @@ module "rancher_manager_primary" {
   rke2_is_primary    = true  # NEW: marks this as primary node
   rke2_server_token  = ""    # Primary generates its own token
   rke2_server_ip     = ""    # No upstream server for primary
+
+  depends_on = [
+    proxmox_virtual_environment_download_file.ubuntu_cloud_image
+  ]
 }
 
 # ============================================================================
@@ -80,11 +100,12 @@ module "rancher_manager_additional" {
     }
   }
 
-  vm_name         = each.value.hostname
-  vm_id           = each.value.vm_id
-  proxmox_node    = var.proxmox_node
-  cloud_image_url = var.ubuntu_cloud_image_url
-  datastore_id    = var.clusters["manager"].storage
+  vm_name               = each.value.hostname
+  vm_id                 = each.value.vm_id
+  proxmox_node          = var.proxmox_node
+  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image.datastore_id
+  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image.file_name
+  datastore_id          = var.clusters["manager"].storage
 
   cpu_cores    = var.clusters["manager"].cpu_cores
   memory_mb    = var.clusters["manager"].memory_mb
@@ -172,11 +193,12 @@ data "local_file" "apps_token" {
 module "nprd_apps_primary" {
   source = "./modules/proxmox_vm"
 
-  vm_name         = "nprd-apps-1"
-  vm_id           = 404
-  proxmox_node    = var.proxmox_node
-  cloud_image_url = var.ubuntu_cloud_image_url
-  datastore_id    = var.clusters["nprd-apps"].storage
+  vm_name               = "nprd-apps-1"
+  vm_id                 = 404
+  proxmox_node          = var.proxmox_node
+  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image.datastore_id
+  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image.file_name
+  datastore_id          = var.clusters["nprd-apps"].storage
 
   cpu_cores    = var.clusters["nprd-apps"].cpu_cores
   memory_mb    = var.clusters["nprd-apps"].memory_mb
@@ -201,7 +223,8 @@ module "nprd_apps_primary" {
 
   # CRITICAL: Only build after manager cluster is fully ready
   depends_on = [
-    module.rke2_manager
+    module.rke2_manager,
+    proxmox_virtual_environment_download_file.ubuntu_cloud_image
   ]
 }
 
@@ -223,11 +246,12 @@ module "nprd_apps_additional" {
     }
   }
 
-  vm_name         = each.value.hostname
-  vm_id           = each.value.vm_id
-  proxmox_node    = var.proxmox_node
-  cloud_image_url = var.ubuntu_cloud_image_url
-  datastore_id    = var.clusters["nprd-apps"].storage
+  vm_name               = each.value.hostname
+  vm_id                 = each.value.vm_id
+  proxmox_node          = var.proxmox_node
+  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image.datastore_id
+  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image.file_name
+  datastore_id          = var.clusters["nprd-apps"].storage
 
   cpu_cores    = var.clusters["nprd-apps"].cpu_cores
   memory_mb    = var.clusters["nprd-apps"].memory_mb

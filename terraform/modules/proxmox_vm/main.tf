@@ -17,13 +17,18 @@ variable "vm_id" {
   type        = number
 }
 
-variable "cloud_image_url" {
-  description = "Ubuntu cloud image URL"
+variable "cloud_image_datastore" {
+  description = "Datastore ID where cloud image is already downloaded"
+  type        = string
+}
+
+variable "cloud_image_file_name" {
+  description = "File name of the cloud image already downloaded"
   type        = string
 }
 
 variable "datastore_id" {
-  description = "Datastore ID for storing cloud image"
+  description = "Datastore ID for creating VM disks"
   type        = string
 }
 
@@ -129,20 +134,8 @@ output "hostname" {
   value = var.hostname
 }
 
-# Download Ubuntu cloud image to dedicated import storage
-# This storage was created specifically to support 'import' content type
-# The image is then imported into the VM datastore via the disk block's import_from parameter
-resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
-  content_type        = "import"
-  datastore_id        = "images-import"
-  node_name           = var.proxmox_node
-  url                 = var.cloud_image_url
-  file_name           = "ubuntu-noble-cloudimg-amd64.qcow2"
-  overwrite           = true
-  overwrite_unmanaged = true
-}
-
-# Create VM from cloud image
+# Create VM from pre-downloaded cloud image
+# Image is already downloaded at root level and passed via variables
 resource "proxmox_virtual_environment_vm" "vm" {
   vm_id           = var.vm_id
   name            = var.vm_name
@@ -161,7 +154,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
   # Import cloud image as primary disk and expand
   disk {
     datastore_id = var.datastore_id
-    import_from  = proxmox_virtual_environment_download_file.ubuntu_cloud_image.id
+    import_from  = "images-import:import/${var.cloud_image_file_name}"
     interface    = "virtio0"
     iothread     = true
     discard      = "on"
@@ -210,7 +203,4 @@ resource "proxmox_virtual_environment_vm" "vm" {
       timeout     = "60m"
     }
   }
-
-  # Ensure cloud image is downloaded before creating VM
-  depends_on = [proxmox_virtual_environment_download_file.ubuntu_cloud_image]
 }

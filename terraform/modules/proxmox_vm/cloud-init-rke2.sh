@@ -142,14 +142,37 @@ if [ -n "${SERVER_IP}" ] && [ "${SERVER_IP}" != "" ]; then
     exit 1
   fi
   
-  export RKE2_URL="https://${SERVER_IP}:9345"
-  export RKE2_TOKEN="${SERVER_TOKEN}"
+  # Create config file for secondary node BEFORE running installer
+  # RKE2 reads this automatically and joins primary's etcd cluster
+  mkdir -p /etc/rancher/rke2
+  cat > /etc/rancher/rke2/config.yaml <<'EOF'
+# Secondary RKE2 server - join primary cluster via shared etcd
+server: https://SERVER_IP_PLACEHOLDER:9345
+token: SERVER_TOKEN_PLACEHOLDER
+tls-san:
+  - rancher.dataknife.net
+  - SERVER_IP_PLACEHOLDER
+EOF
+  # Replace placeholders with actual values
+  sed -i "s|SERVER_IP_PLACEHOLDER|${SERVER_IP}|g" /etc/rancher/rke2/config.yaml
+  sed -i "s|SERVER_TOKEN_PLACEHOLDER|${SERVER_TOKEN}|g" /etc/rancher/rke2/config.yaml
+  log "✓ RKE2 secondary config created at /etc/rancher/rke2/config.yaml"
+  
 else
   log "Starting new RKE2 server (primary node)"
-  # CRITICAL: Enable external etcd clustering mode for HA
-  # This makes the primary's etcd cluster-aware so secondaries can join the same etcd
-  export RKE2_CLUSTER_INIT=true
+  # Create config file for primary node
+  mkdir -p /etc/rancher/rke2
+  cat > /etc/rancher/rke2/config.yaml <<'EOF'
+# Primary RKE2 server with HA etcd clustering
+tls-san:
+  - rancher.dataknife.net
+  - 192.168.1.100
+EOF
+  log "✓ RKE2 primary config created at /etc/rancher/rke2/config.yaml"
 fi
+
+# Install RKE2 - will automatically read config.yaml for all settings
+export INSTALL_RKE2_VERSION="${RKE2_VERSION}"
 
 if ! "$INSTALLER"; then
   log "✗ RKE2 installation failed"

@@ -10,7 +10,33 @@ This project deploys a complete Rancher management cluster and non-production ap
 - **Provider**: bpg/proxmox v0.90.0 (reliable, well-maintained)
 - **Kubernetes**: RKE2 v1.34.3+rke2r1 (specific stable version - NOT "latest")
 
-## Latest Updates (Jan 1, 2026)
+## Latest Updates (Jan 3, 2026)
+
+### Critical Fix: Proxmox Cloud Image Import Path (Jan 3, 2026)
+
+**Problem Discovered During Deployment:**
+VM creation failed with: `unable to parse directory volume name 'ubuntu-noble-cloudimg-amd64.qcow2'`
+
+**Root Cause:**
+When importing cloud images to Proxmox VE via the `proxmox_virtual_environment_download_file` resource with `content_type = "import"`, the file is automatically placed in a subdirectory (e.g., `import/ubuntu-noble-cloudimg-amd64.qcow2` instead of just the filename).
+
+**Solution Implemented:**
+Updated VM disk configuration to include the subdirectory path:
+```hcl
+# Before (INCORRECT):
+import_from = "images-import:${var.cloud_image_file_name}"
+# Result: "images-import:ubuntu-noble-cloudimg-amd64.qcow2" ✗
+
+# After (CORRECT):
+import_from = "images-import:import/${var.cloud_image_file_name}"
+# Result: "images-import:import/ubuntu-noble-cloudimg-amd64.qcow2" ✓
+```
+
+**Files Changed:**
+- `terraform/modules/proxmox_vm/main.tf` - Updated disk import_from path with `import/` subdirectory
+
+**Key Takeaway:**
+When using Proxmox `content_type = "import"`, the provider stores files in a subdirectory structure. Always verify the actual file path after download by checking the resource ID output (e.g., `id=images-import:import/ubuntu-noble-cloudimg-amd64.qcow2`).
 
 ### Critical Fix: RKE2 Version
 - **Issue**: RKE2 "latest" is not a downloadable release
@@ -720,7 +746,9 @@ This automatically:
 - Runs terraform apply with auto-approval
 - Monitors progress in background
 
-**Manual deployment with logging:**
+**IMPORTANT**: The `apply.sh` script **always starts terraform apply in the background**. Do NOT run terraform apply again - just monitor the logs.
+
+**Manual deployment with logging (if not using apply.sh):**
 
 ```bash
 cd terraform
@@ -735,24 +763,24 @@ terraform apply -auto-approve
 - `warn` / `error` - Only warnings and errors
 
 **Deployment timeline expectations:**
-1. **Cloud image download**: 30-40 seconds (3 images in parallel)
-2. **VM creation**: 1-2 minutes (provisioners start immediately)
+1. **Cloud image download**: 30-40 seconds
+2. **VM creation**: 1-2 minutes
 3. **SSH connection attempts**: 3-5 minutes (VMs booting, SSH becoming available)
-4. **RKE2 installation**: 5-10 minutes per cluster (parallel across nodes)
-5. **Token verification**: 1-2 minutes (rke2_cluster module polling)
-6. **Total deployment time**: 15-25 minutes from terraform apply start
+4. **RKE2 installation**: 5-10 minutes per cluster
+5. **Token verification**: 1-2 minutes
+6. **Total deployment time**: 25-30 minutes from apply.sh start
 
 **Monitoring deployment progress:**
 
 ```bash
-# From another terminal, tail the log file
+# Check if deployment is running
+ps aux | grep terraform | grep -v grep
+
+# Watch the logs in real-time
 tail -f terraform/terraform-<timestamp>.log
 
 # Filter for key events
 grep -E "Creating|Complete|ERROR" terraform/terraform-<timestamp>.log
-
-# Watch SSH connection attempts
-grep "Connecting to remote host via SSH" terraform/terraform-<timestamp>.log
 ```
 
 ## Testing Recommendations
