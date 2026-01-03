@@ -219,19 +219,25 @@ Automatically created at:
 
 **New in this version**: Rancher is now deployed automatically in a single `terraform apply` command! No manual kubeconfig retrieval needed.
 
-**How it works (Solution 1):**
+**How it works (Terraform Local-Exec Fix):**
 
-We use a **placeholder kubeconfig** approach:
-1. **Early**: Cloud-init creates a placeholder `~/.kube/rancher-manager.yaml` during VM startup (~40s)
-2. **Terraform validation**: Kubernetes provider validates path exists (succeeds with placeholder)
-3. **Middle**: RKE2 installs and generates real credentials (~10m)
-4. **Late**: Real kubeconfig overwrites placeholder (~11m)
-5. **Final**: Rancher installation begins with valid credentials (~15-20m)
+We replaced the problematic Kubernetes/Helm Terraform providers with `local-exec` provisioners that use the CLI tools directly:
 
-This eliminates the need for:
-- ❌ Manual kubeconfig retrieval between runs
-- ❌ Two separate `terraform apply` commands
-- ❌ Waiting for RKE2 readiness before Helm deployment
+1. **Before fix**: Terraform Kubernetes provider tried to validate kubeconfig, failed on self-signed certificates
+2. **After fix**: We use `helm` and `kubectl` CLI tools with `--insecure-skip-tls-verify` flag
+3. **Benefits**:
+   - ✅ Handles self-signed certificates from RKE2 automatically
+   - ✅ Uses same approach as manual deployment (proven working)
+   - ✅ No provider version compatibility issues
+   - ✅ Clear error messages from CLI tools
+   - ✅ Simpler to debug and maintain
+
+**Deployment sequence:**
+1. VMs created and RKE2 installed (~15 minutes)
+2. Real kubeconfig retrieved and placed at `~/.kube/rancher-manager.yaml` (~1 minute)
+3. cert-manager installed via `helm install` with `--insecure-skip-tls-verify` (~3 minutes)
+4. Rancher installed via `helm install` with `--insecure-skip-tls-verify` (~5 minutes)
+5. Bootstrap password displayed in Terraform output
 
 **Configuration:**
 ```hcl
@@ -246,6 +252,23 @@ install_rancher = true  # Rancher installs automatically on first apply
 
 # Total time: ~35-40 minutes (includes VMs + RKE2 + Rancher)
 ```
+
+**Technical Implementation:**
+- Module: `terraform/modules/rancher_cluster/main.tf`
+- Uses: `null_resource` with `provisioner "local-exec"`
+- Commands:
+  ```bash
+  helm repo add [repo]
+  helm install [chart] ... --insecure-skip-tls-verify
+  kubectl create namespace ... --insecure-skip-tls-verify
+  ```
+- Kubeconfig: Retrieved from manager-1 at `/etc/rancher/rke2/rke2.yaml`
+- IP substitution: `sed 's/127.0.0.1/<real-ip>/g'` in rke2_manager module
+
+**Requirements:**
+- `helm` CLI installed (check with `make check-rancher-tools`)
+- `kubectl` CLI installed (check with `make check-rancher-tools`)
+- Direct access to cluster via kubeconfig path
 
 ### Access Rancher UI
 
