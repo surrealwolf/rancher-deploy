@@ -33,12 +33,32 @@ Deploys Rancher via Helm with dependencies:
 - Deploys Rancher Helm chart
 - Configures bootstrap password
 - Sets up Ingress for HTTPS
+- **Creates and persists API token** for downstream cluster registration
+- **Auto-generates registration credentials** for apps cluster
 
 **Key Features:**
 - Kubernetes and Helm providers configured
 - Automatic namespace creation
 - TLS with Let's Encrypt ready
 - Multi-replica Rancher deployment
+- **Native API token generation** (no manual UI steps required)
+- **Automated token persistence** to `~/.kube/.rancher-api-token`
+
+### 3. rancher2_cluster Resource
+**Location:** `terraform/main.tf` - Native downstream cluster registration
+
+Uses the native `rancher2` Terraform provider to automatically register the NPRD Apps cluster with Rancher Manager:
+- Creates cluster object in Rancher Manager
+- Automatically extracts registration credentials
+- Applies them to downstream cluster VMs
+- Manages lifecycle without manual intervention
+
+**Key Features:**
+- ✅ **Zero manual steps** - No copy/paste from Rancher UI
+- ✅ **Fully automated** - Single `terraform apply` does everything
+- ✅ **Native provider** - Uses official Rancher Terraform provider
+- ✅ **Self-healing** - Token automatically refreshed if needed
+- ✅ **CI/CD friendly** - No interactive steps required
 
 ## Updated main.tf
 
@@ -46,15 +66,22 @@ The main Terraform file now orchestrates:
 
 ```hcl
 # 1. Provision VMs
-module "rancher_manager" { ... }
-module "nprd_apps" { ... }
+module "rancher_manager_primary" { ... }
+module "rancher_manager_additional" { ... }
+module "nprd_apps_primary" { ... }
+module "nprd_apps_additional" { ... }
 
-# 2. Install RKE2
+# 2. Install RKE2 on Manager
 module "rke2_manager" { ... }
-module "rke2_apps" { ... }
 
-# 3. Deploy Rancher
+# 3. Deploy Rancher (creates API token)
 module "rancher_deployment" { ... }
+
+# 4. Register Downstream Cluster (NATIVE METHOD)
+resource "rancher2_cluster" "nprd_apps" { ... }
+
+# 5. Install RKE2 on Apps Cluster
+module "rke2_apps" { ... }
 ```
 
 ## Deployment Workflow
@@ -65,19 +92,37 @@ terraform apply
 │   ├── Proxmox VM provisioning
 │   ├── Cloud-init networking setup
 │   └── SSH connectivity verification
-├── 2. Install RKE2 (15-20 min)
+├── 2. Install RKE2 on Manager (5-10 min)
 │   ├── Install RKE2 on first server
 │   ├── Join additional servers
 │   ├── Retrieve kubeconfig
-│   └── Store locally in ~/.kube/
-└── 3. Deploy Rancher (5-10 min)
-    ├── Install cert-manager
-    ├── Deploy Rancher Helm chart
-    ├── Configure bootstrap password
-    └── Create Ingress rules
+│   └── Store locally in ~/.kube/rancher-manager.yaml
+├── 3. Deploy Rancher on Manager (5-10 min)
+│   ├── Install cert-manager
+│   ├── Deploy Rancher Helm chart
+│   ├── Create API token via Rancher API
+│   ├── Persist token to ~/.kube/.rancher-api-token
+│   └── Configure bootstrap password & Ingress
+├── 4. Register Downstream Cluster (NATIVE) (2-3 min)
+│   ├── Use rancher2 provider with API token
+│   ├── Create cluster object in Rancher
+│   ├── Extract registration credentials
+│   └── Pass to downstream cluster VMs
+└── 5. Install RKE2 on Apps Cluster (5-10 min)
+    ├── Install RKE2 on first node
+    ├── Join additional nodes
+    ├── System-agent auto-registers with Rancher
+    └── Retrieve kubeconfig to ~/.kube/nprd-apps.yaml
 
-Total Time: 30-45 minutes
+Total Time: 30-50 minutes (fully automated, no manual steps)
 ```
+
+**Key Improvements (Native rancher2 Provider):**
+- ✅ **Zero manual token copy/paste** - API token auto-created
+- ✅ **Single terraform apply** - Everything deploys end-to-end
+- ✅ **No Rancher UI steps** - Automatic cluster registration
+- ✅ **CI/CD friendly** - No interactive configuration required
+- ✅ **Self-healing** - Token automatically refreshed if needed
 
 ## Configuration Required
 
@@ -240,7 +285,7 @@ kubectl logs -n cattle-system -l app=rancher --tail=100
 
 ## Next Steps
 
-After Rancher is deployed:
+After Rancher is deployed and downstream cluster is automatically registered:
 
 1. **Access Rancher UI**
    ```
@@ -249,9 +294,18 @@ After Rancher is deployed:
    Password: <from tfvars>
    ```
 
-2. **Change admin password** in Rancher UI
+2. **Change admin password** in Rancher UI (important!)
 
-3. **Register apps cluster** - Use Rancher UI to add the apps cluster
+3. **Verify Downstream Cluster Registration**
+   ```bash
+   # In Rancher UI: Cluster Management
+   # nprd-apps should appear with all 3 nodes healthy
+   
+   # Or via kubectl:
+   export KUBECONFIG=~/.kube/rancher-manager.yaml
+   kubectl get clusters.management.cattle.io
+   kubectl describe clusters.management.cattle.io nprd-apps
+   ```
 
 4. **Configure authentication** - LDAP, OIDC, GitHub, etc.
 

@@ -73,9 +73,11 @@ The script will:
 - Cloud image downloads: ~30-60 seconds
 - VM creation: ~2-3 minutes
 - Cloud-init setup: ~5-7 minutes
-- RKE2 installation: ~5-10 minutes
-- Node joining: ~2-3 minutes
-- **Total: 20-30 minutes**
+- RKE2 installation (Manager): ~5-10 minutes
+- Rancher deployment: ~5-10 minutes
+- **Downstream cluster registration (NATIVE)**: ~2-3 minutes
+- RKE2 installation (Apps): ~5-10 minutes
+- **Total: 30-50 minutes** (fully automated, no manual steps)
 
 ### 3. Monitor Progress
 
@@ -257,55 +259,39 @@ curl https://get.rke2.io | head -5  # Test RKE2 download
 Automatically created at:
 - `~/.kube/rancher-manager.yaml` - Manager cluster
 - `~/.kube/nprd-apps.yaml` - Apps cluster
+- `~/.kube/.rancher-api-token` - API token file
 
-### Deploy Rancher (Automatic with Single-Apply)
+### Rancher Deployment (Automatic with Single-Apply)
 
-**New in this version**: Rancher is now deployed automatically in a single `terraform apply` command! No manual kubeconfig retrieval needed.
+**Fully Automated**: Rancher and downstream cluster registration are completely automated in a single `terraform apply` command!
 
-**How it works (Terraform Local-Exec Fix):**
-
-We replaced the problematic Kubernetes/Helm Terraform providers with `local-exec` provisioners that use the CLI tools directly:
-
-1. **Before fix**: Terraform Kubernetes provider tried to validate kubeconfig, failed on self-signed certificates
-2. **After fix**: We use `helm` and `kubectl` CLI tools with `--insecure-skip-tls-verify` flag
-3. **Benefits**:
-   - ✅ Handles self-signed certificates from RKE2 automatically
-   - ✅ Uses same approach as manual deployment (proven working)
-   - ✅ No provider version compatibility issues
-   - ✅ Clear error messages from CLI tools
-   - ✅ Simpler to debug and maintain
+**What happens automatically:**
+1. VMs created and RKE2 installed (~15 minutes)
+2. Rancher Manager deployed via Helm (~5-10 minutes)
+   - cert-manager installed automatically
+   - Rancher deployed with bootstrap password
+   - **API token created and saved to `~/.kube/.rancher-api-token`**
+3. **Downstream cluster registered using native rancher2 provider** (~2-3 minutes)
+   - Cluster object created in Rancher Manager
+   - Registration credentials auto-extracted
+   - **No manual Rancher UI steps required!**
+4. Apps cluster RKE2 installed (~5-10 minutes)
+   - Nodes automatically discover Rancher
+   - System-agent automatically registers with Rancher
+   - Cluster becomes operational without manual configuration
 
 **Deployment sequence:**
-1. VMs created and RKE2 installed (~15 minutes)
-2. Real kubeconfig retrieved and placed at `~/.kube/rancher-manager.yaml` (~1 minute)
-3. cert-manager installed via `helm install` with `--insecure-skip-tls-verify` (~3 minutes)
-4. Rancher installed via `helm install` with `--insecure-skip-tls-verify` (~5 minutes)
-5. Bootstrap password displayed in Terraform output
-
-**Configuration:**
-```hcl
-# terraform/terraform.tfvars
-install_rancher = true  # Rancher installs automatically on first apply
-```
-
-**To deploy everything in one command:**
 ```bash
-# Already set to true in default tfvars
 ./scripts/apply.sh -auto-approve
 
-# Total time: ~35-40 minutes (includes VMs + RKE2 + Rancher)
+# Total time: ~30-50 minutes (includes VMs + RKE2 + Rancher + Downstream Registration)
 ```
 
 **Technical Implementation:**
-- Module: `terraform/modules/rancher_cluster/main.tf`
-- Uses: `null_resource` with `provisioner "local-exec"`
-- Commands:
-  ```bash
-  helm repo add [repo]
-  helm install [chart] ... --insecure-skip-tls-verify
-  kubectl create namespace ... --insecure-skip-tls-verify
-  ```
-- Kubeconfig: Retrieved from manager-1 at `/etc/rancher/rke2/rke2.yaml`
+- Module: `terraform/modules/rancher_cluster/main.tf` (Helm deployments)
+- Provider: `rancher2` (native cluster registration)
+- Script: `deploy-rancher.sh` (creates and persists API token)
+- Token file: `~/.kube/.rancher-api-token` (for provider authentication)
 - IP substitution: `sed 's/127.0.0.1/<real-ip>/g'` in rke2_manager module
 
 **Requirements:**

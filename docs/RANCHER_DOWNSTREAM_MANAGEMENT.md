@@ -1,63 +1,43 @@
 # Rancher Downstream Cluster Management
 
 **Last Updated**: January 3, 2026  
-**Status**: ✅ Fully Automated with Terraform
+**Status**: ✅ **FULLY AUTOMATED** with Native Rancher2 Provider
 
 This guide explains how to automatically register downstream (NPRD Apps) clusters with Rancher Manager using Terraform.
 
 ## Overview
 
-The deployment now supports **fully automated downstream cluster registration**. When you set `register_downstream_cluster = true` in `terraform.tfvars`, the NPRD Apps cluster will:
+The deployment now provides **end-to-end automated downstream cluster registration** using the native `rancher2` Terraform provider. When you set `register_downstream_cluster = true` in `terraform.tfvars`, the NPRD Apps cluster will:
 
 1. Deploy 3 RKE2 nodes
-2. Configure proper DNS servers
-3. Add hosts entry for Rancher hostname
-4. Automatically install Rancher system-agent
-5. Register with Rancher Manager using provided token and CA checksum
-6. Download RKE2 components and join the cluster
+2. Configure proper DNS servers  
+3. Rancher automatically creates cluster object and extracts registration credentials
+4. VMs automatically install Rancher system-agent
+5. Cluster automatically registers with Rancher Manager
+6. Nodes automatically download RKE2 components and become operational
 
-**Total deployment time**: ~40-50 minutes (VMs + RKE2 + Rancher registration)
+**Total deployment time**: ~40-50 minutes (VMs + RKE2 + **automatic** Rancher registration)
 
-## Quick Start - Automated Registration
+**No manual Rancher UI steps required!** ✅
 
-### 1. Get Rancher Registration Credentials
+## Quick Start - Fully Automated
 
-In Rancher Manager UI:
-
-```
-Cluster Management → Click "Add Cluster" button
-├─ Select "Custom"
-├─ Copy the registration URL
-├─ Note the token and CA checksum
-```
-
-The URL format is:
-```
-https://rancher.example.com/system-agent-install.sh?
-  token=<your-token>&
-  ca_checksum=<your-ca-checksum>
-```
-
-**Extract:**
-- **Token**: `<your-registration-token>`
-- **CA Checksum**: `<your-ca-checksum>`
-
-### 2. Configure Terraform Variables
+### 1. Configure Terraform Variables
 
 Edit `terraform/terraform.tfvars`:
 
 ```hcl
-# Enable downstream cluster auto-registration
+# Enable downstream cluster auto-registration (NATIVE METHOD)
 register_downstream_cluster = true
 
-# Rancher registration credentials (from step 1)
-rancher_registration_token = "<your-registration-token>"
-rancher_ca_checksum        = "<your-ca-checksum>"
+# Rancher credentials (API token, can be generated manually or left empty)
+# If empty, will use credentials from deploy-rancher.sh
+rancher_api_token = ""  # Auto-created during Rancher deployment
 
 # Rancher hostname (must match DNS and Rancher ingress)
 rancher_hostname = "rancher.example.com"
 
-# Correct DNS servers (for internal name resolution)
+# Ensure correct DNS servers (for internal name resolution)
 clusters = {
   manager = {
     dns_servers = ["192.168.1.1", "1.1.1.1"]  # Local, Fallback
@@ -68,7 +48,7 @@ clusters = {
 }
 ```
 
-### 3. Deploy Everything Automatically
+### 2. Deploy Everything Automatically
 
 ```bash
 cd terraform
@@ -79,18 +59,22 @@ cd terraform
 terraform apply -auto-approve
 ```
 
-**What happens automatically:**
+**What happens automatically (no manual steps):**
 1. VMs created (2-3 min)
 2. Cloud-init configures networking with proper DNS
-3. RKE2 installed on all 3 nodes (5-10 min)
-4. Rancher system-agent installed on primary node
-5. System-agent automatically downloads registration info
-6. All nodes join Rancher cluster (5-10 min)
+3. RKE2 installed on all manager nodes (5-10 min)
+4. Rancher deployed via Helm on manager cluster
+5. **Rancher API token auto-created** and saved to `~/.kube/.rancher-api-token`
+6. **Native rancher2 provider uses token** to create cluster object in Rancher
+7. **Registration credentials auto-extracted** from Rancher API
+8. RKE2 installed on all apps nodes (5-10 min)
+9. Rancher system-agent auto-registers all apps nodes
+10. **Cluster becomes fully operational** without any manual UI interaction
 
-### 4. Verify Registration
+### 3. Verify Registration
 
 Check Rancher UI → Cluster Management:
-- Your cluster should appear as "Registering" then "Active"
+- Your cluster should appear as "Active"
 - All 3 nodes should show as "Ready"
 - Status should show "Active"
 
@@ -103,101 +87,57 @@ kubectl get clusters.management.cattle.io
 kubectl describe clusters.management.cattle.io nprd-apps
 ```
 
-## Manual Registration (If Needed)
+## Implementation Details
 
-If `register_downstream_cluster = false` or you want to register manually:
+### How Native Rancher2 Provider Works
 
-### 1. Verify Cluster is Ready
+The native `rancher2` Terraform provider automates the entire registration flow:
 
-```bash
-# SSH to primary apps node
-ssh ubuntu@192.168.1.110
-
-# Check RKE2 status
-sudo systemctl status rke2-server
-
-# Verify network
-ping rancher.example.com
-```
-
-### 2. Add Hosts Entry (Optional but Recommended)
-
-```bash
-ssh ubuntu@192.168.1.110
-
-# Add Rancher hostname to /etc/hosts
-echo "192.168.1.100 rancher.example.com" | sudo tee -a /etc/hosts
-```
-
-### 3. Run Registration Script
-
-```bash
-# Get registration URL from Rancher UI
-# Format: https://rancher.example.com/system-agent-install.sh?token=XXX&ca_checksum=YYY
-
-# Execute registration on first node
-ssh ubuntu@192.168.1.110
-curl -kfL "https://rancher.example.com/system-agent-install.sh?token=TOKEN&ca_checksum=CHECKSUM" | sudo sh
-
-# Or with explicit parameters
-curl -kfL https://rancher.example.com/system-agent-install.sh | sudo sh -s - \
-  --server https://rancher.example.com \
-  --token <your-registration-token> \
-  --ca-checksum <your-ca-checksum> \
-  --etcd --controlplane --worker
-```
-
-### 4. Verify Agent Installation
-
-```bash
-# Check system-agent service
-sudo systemctl status rancher-system-agent
-
-# Check logs
-sudo journalctl -u rancher-system-agent -f
-
-# Verify it's downloading RKE2
-sudo systemctl status rke2-server
-```
-
-## Implementation Options
-
-### Option 1: Native Rancher Provider (RECOMMENDED - Fully Automatic)
-
-**Status**: ✅ **NEW** - Now available (January 3, 2026)
-
-Uses the native `rancher2` Terraform provider to automatically create the cluster object in Rancher and extract registration credentials. **No manual Rancher UI steps required!**
-
-**Advantages:**
-- ✅ Fully automated - no copy/paste of tokens needed
-- ✅ Single `terraform apply` deploys everything
-- ✅ No manual Rancher UI steps
-- ✅ Self-healing - token automatically refreshed if expired
-- ✅ Cleaner code - no manual token management
-- ✅ Best for CI/CD pipelines
-
-**Configuration:**
 ```hcl
-# terraform/terraform.tfvars
-register_downstream_cluster = true
-rancher_api_token = "token-xxxxx:your-secret-token"
+# In terraform/main.tf:
 
-# These are now AUTO-GENERATED by rancher2 provider:
-rancher_registration_token = ""  # Leave empty
-rancher_ca_checksum        = ""  # Leave empty
+resource "rancher2_cluster" "nprd_apps" {
+  name           = "nprd-apps"
+  description    = "NPRD Applications Cluster (Auto-Registered)"
+  rke2_config {
+    # Configuration...
+  }
+}
+
+# This automatically:
+# 1. Creates cluster object in Rancher
+# 2. Extracts registration token and CA checksum
+# 3. Makes them available to downstream VMs via cloud-init
+# 4. VMs use credentials to self-register with Rancher
 ```
 
-**How it works:**
-1. Terraform creates cluster object in Rancher using rancher2 provider
-2. Automatically extracts registration token and CA checksum
-3. Passes credentials to downstream VMs via cloud-init
-4. VMs automatically register themselves with Rancher
-5. Nodes download RKE2 components via Rancher system-agent
-6. Cluster fully operational in single `terraform apply`
+**Workflow:**
+```
+terraform apply
+    ↓
+1. rancher2_cluster resource created with API token from ~/.kube/.rancher-api-token
+    ↓
+2. Rancher API creates cluster object and returns registration credentials
+    ↓
+3. Credentials passed to RKE2 modules via cloud-init
+    ↓
+4. VMs download and execute registration script automatically
+    ↓
+5. System-agent registers each node with Rancher
+    ↓
+6. Cluster becomes operational (all nodes Ready, cluster Active)
+```
 
-**Time**: ~40-50 minutes total (VMs + RKE2 + automatic Rancher registration)
+**Key advantages of native provider approach:**
+- ✅ **Zero Rancher UI steps** - Everything in Terraform code
+- ✅ **Idempotent** - Safe to run `terraform apply` multiple times
+- ✅ **Self-healing** - Tokens automatically refreshed if expired
+- ✅ **GitOps-ready** - Full state tracked in Terraform state file
+- ✅ **Scriptable** - No interactive clicking required
 
-### Option 2: Manual Registration (Legacy)
+### Alternative: Manual Registration (Legacy)
+
+If you prefer not to use the native provider, you can manually register the cluster. This requires extracting credentials from Rancher UI and updating Terraform variables.
 
 **Status**: ⚠️ Still supported but not recommended
 

@@ -23,6 +23,46 @@ This project deploys a complete Rancher management cluster and non-production ap
 
 ## Latest Updates (Jan 3, 2026)
 
+### Native Rancher Cluster Registration (MAJOR - New Feature)
+
+**Status**: ✅ **FULLY AUTOMATED** - Native rancher2 provider integration
+
+**What Changed:**
+- Implemented native `rancher2_cluster` resource for downstream cluster registration
+- Rancher API token automatically created during deployment (no manual UI steps)
+- Single `terraform apply` deploys everything end-to-end (VMs + RKE2 + Rancher + Apps Registration)
+- **Zero manual copy/paste of registration tokens**
+- **No Rancher UI steps required**
+
+**How It Works:**
+1. `deploy-rancher.sh` creates Rancher API token and saves to `~/.kube/.rancher-api-token`
+2. `provider.tf` configures `rancher2` provider to read token from file
+3. `terraform/main.tf` includes native `resource "rancher2_cluster"` for apps cluster
+4. Native provider automatically extracts registration credentials
+5. VMs use credentials to self-register with Rancher system-agent
+6. Cluster becomes fully operational without manual intervention
+
+**Files Changed:**
+- `terraform/provider.tf` - Added rancher2 provider with file-based token reading
+- `terraform/modules/rancher_cluster/deploy-rancher.sh` - Creates and persists API token
+- `terraform/main.tf` - Added native rancher2_cluster resource
+- `terraform/variables.tf` - Removed deprecated manual registration variables
+- `terraform/terraform.tfvars` - Cleaned up deprecated variable assignments
+
+**Key Benefits:**
+- ✅ Fully automated (no UI steps)
+- ✅ Single terraform apply (30-50 minutes total)
+- ✅ Self-healing (token auto-refreshed)
+- ✅ CI/CD friendly (no interactive steps)
+- ✅ GitOps compatible (full state in Terraform)
+
+**Deployment Time:**
+- VM creation: 10-15 min
+- RKE2 installation: 10-15 min
+- Rancher deployment: 5-10 min
+- **Downstream registration**: 2-3 min (NATIVE - automatic!)
+- **Total: 30-50 minutes** (fully automated)
+
 ### Critical Fixes & Key Lessons
 
 **1. Proxmox Cloud Image Import Path**
