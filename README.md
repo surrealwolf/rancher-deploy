@@ -23,17 +23,162 @@ Deploy a complete Rancher management cluster and non-production apps cluster on 
 - **Kubernetes**: RKE2 clusters automatically bootstrapped and configured
 - **Rancher**: Helm-deployed with cert-manager, Ingress, and bootstrap password
 
-## Prerequisites
+## Requirements
 
-- **Proxmox VE 8.0+**: With API token access
+### Local System Requirements
+
+Your workstation/CI runner executing Terraform must have:
+
 - **Terraform**: v1.5 or later
-- **SSH Key**: For authentication (optional, password auth supported)
-- **Available Resources**: 24 vCPU cores, 48GB RAM, 600GB disk space
-- **Shell**: `bash` or `zsh` (recommended for AI assistant compatibility; if using Fish shell, consider switching to `zsh` for better interoperability with automation tools and AI-assisted development)
+- **Git**: For version control and cloning this repository
+- **SSH Client**: For VM authentication and access
+- **curl**: For API testing and Proxmox verification
+- **bash or zsh**: Shell environment (recommended for AI-assistant compatibility)
+- **Internet access**: To download cloud images, RKE2, and Rancher
+- **Git credentials**: Access to GitHub (public repository, no auth required)
+
+**Optional but helpful:**
+- `kubectl`: For post-deployment cluster management (can be retrieved from kubeconfig)
+- `helm`: For manual Rancher customization (installed automatically during deployment)
+- `jq`: For parsing JSON in scripts and debugging
+
+### Proxmox Cluster Requirements
+
+Your Proxmox VE cluster must have:
+
+- **Proxmox VE**: Version 8.0 or later
+- **Available Resources**:
+  - **CPU**: 24 vCPU cores minimum (12 for manager cluster, 12 for apps cluster)
+  - **RAM**: 48GB minimum (24GB for manager, 24GB for apps)
+  - **Storage**: 600GB minimum (120GB per 6 VMs + image cache)
+  - **Network**: Access to local network segment for VMs + external for RKE2/Rancher downloads
+
+- **Networking**:
+  - VLAN support (default VLAN 14 for unified cluster management)
+  - DHCP or static IP capability for cloud-init configuration
+  - Access to external DNS (1.1.1.1 or local 192.168.1.1)
+  - Internet access for downloading Ubuntu cloud images and RKE2 releases
+
+- **Storage**:
+  - At least one datastore with 600GB free space (`local-vm-zfs` or similar)
+  - Recommended: SSD or NVMe for better performance
+  - Support for qcow2 cloud image format
+
+- **API Access**:
+  - Proxmox API token with required permissions (see [API_TOKEN_AND_PERMISSIONS.md](docs/API_TOKEN_AND_PERMISSIONS.md))
+  - API endpoint accessible from your workstation (typically `https://<proxmox-ip>:8006`)
+
+### Network Requirements
+
+Connectivity from **local system** to:
+- ✅ Proxmox API endpoint (`https://<proxmox-ip>:8006/api2/json`)
+- ✅ Proxmox SSH (typically port 22)
+- ✅ Internet (for downloads): github.com, get.rke2.io, cloud-images.ubuntu.com, docker.io, quay.io
+
+Connectivity from **Proxmox VMs** to:
+- ✅ Internet: github.com, get.rke2.io (for RKE2 installer)
+- ✅ docker.io, quay.io (for container images)
+- ✅ Local DNS/Gateway for networking (192.168.1.1 or equivalent)
+
+### DNS and Hostname Requirements
+
+For Rancher to function properly:
+
+- **DNS Records** required (A and CNAME):
+  ```
+  manager.example.com          IN A 192.168.1.100
+  manager.example.com          IN A 192.168.1.101
+  manager.example.com          IN A 192.168.1.102
+  rancher.example.com          IN CNAME manager.example.com
+  nprd-apps.example.com        IN A 192.168.1.110
+  nprd-apps.example.com        IN A 192.168.1.111
+  nprd-apps.example.com        IN A 192.168.1.112
+  ```
+
+- **Domain name**: Must resolve to all 3 manager cluster nodes for HA
+- **See [DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md)** for detailed DNS setup
+
+### Supported Platforms
+
+#### Proxmox Versions
+- ✅ Proxmox VE 8.x (tested, recommended)
+- ✅ Proxmox VE 9.x (tested, recommended)
+
+#### Operating Systems
+- ✅ Ubuntu 24.04 LTS (default, cloud image)
+- ⚠️ Other Ubuntu versions supported (change cloud image URL in terraform.tfvars)
+
+#### RKE2 Versions
+- ✅ v1.34.3+rke2r1 (tested stable, default)
+- ✅ Any specific RKE2 release tag (change `rke2_version` in terraform.tfvars)
+- ❌ "latest" tag (not supported - must use specific version)
+
+#### Kubernetes
+- ✅ RKE2 v1.32+ (supported)
+- ✅ High Availability (3+ manager nodes recommended)
+- ❌ Single-node clusters (requires manual tfvars modification)
+
+#### Rancher
+- ✅ Rancher v2.7.x (tested, default)
+- ✅ Rancher v2.8.x (supported)
+- ⚠️ Must have valid TLS certificate or use self-signed (auto-generated)
+
+#### Container Runtimes
+- ✅ containerd (RKE2 default, auto-configured)
+
+#### Hypervisors (as cloud image targets)
+- ✅ QEMU/KVM (Proxmox default)
+
+### API Token Permissions
+
+Your Proxmox API token requires these minimum permissions:
+
+| Permission | Purpose |
+|---|---|
+| `Datastore.Allocate` | Create and modify datastores |
+| `Datastore.Browse` | Access datastore contents |
+| `Nodes.Shutdown` | Reboot nodes |
+| `Qemu.Allocate` | Create and modify VMs |
+| `Qemu.Clone` | Clone VMs |
+| `Qemu.Console` | Access VM console |
+| `Qemu.Config.*` | Configure VM settings |
+| `Qemu.PowerMgmt` | Start/stop/reboot VMs |
+
+**See [docs/API_TOKEN_AND_PERMISSIONS.md](docs/API_TOKEN_AND_PERMISSIONS.md)** for step-by-step token creation guide and complete permissions reference.
+
+### Unsupported / Out of Scope
+
+- ❌ Single-node Proxmox deployments (requires HA infrastructure)
+- ❌ Non-QEMU hypervisors
+- ❌ Bare metal deployments (use Proxmox VE or similar)
+- ❌ Azure, AWS, GCP clouds (Proxmox-only platform)
+- ❌ Kubernetes upgrade automation (manual upgrade required)
+- ❌ Multi-cluster federation (can deploy multiple independent clusters)
+- ❌ Windows VMs (Ubuntu Linux only)
+
+## Prerequisites Summary
+
+This is a quick summary. See **[Requirements](#requirements)** section above for detailed information:
+
+- **Proxmox VE**: 8.0+ with API token access
+- **Terraform**: v1.5 or later
+- **SSH Key**: For VM authentication
+- **Available Resources**: 24 vCPU cores, 48GB RAM, 600GB storage
+- **Shell**: `bash` or `zsh` (recommended; Fish shell not ideal for AI-assistant compatibility)
+
+For complete requirements including local system setup, network access, DNS configuration, and API token permissions, see the **[Requirements](#requirements)** section above.
 
 ## Quick Start
 
-### 1. Prepare Configuration
+### 1. Create Proxmox API Token
+
+If you haven't already created an API token, follow the guide at [docs/API_TOKEN_AND_PERMISSIONS.md](docs/API_TOKEN_AND_PERMISSIONS.md). You'll need:
+- **proxmox_api_url**: Your Proxmox endpoint
+- **proxmox_api_user**: Usually `root@pam`
+- **proxmox_api_token_id**: Token name (e.g., `terraform`)
+- **proxmox_api_token_secret**: Token secret (generated by Proxmox)
+
+### 2. Prepare Configuration
 
 ```bash
 cd /home/lee/git/rancher-deploy/terraform
@@ -54,7 +199,7 @@ rancher_password         = "your-secure-password"
 
 See [docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md) for all options.
 
-### 2. Deploy Infrastructure + Kubernetes
+### 3. Deploy Infrastructure + Kubernetes
 
 From the root directory:
 
@@ -99,7 +244,7 @@ See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md#deploy-rancher-automatic
 - **Port 6443**: Kubernetes API (kubectl, only after cluster initialized)
 - Configured automatically via cloud-init
 
-### 3. Verify Deployment
+### 4. Verify Deployment
 
 ```bash
 # Check manager Kubernetes cluster
@@ -118,6 +263,7 @@ terraform output rancher_url
 
 Core documentation for deployment and troubleshooting:
 
+- **[docs/API_TOKEN_AND_PERMISSIONS.md](docs/API_TOKEN_AND_PERMISSIONS.md)** - Proxmox API token creation and minimum required permissions for end-to-end deployment
 - **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough, includes kubectl tools setup
 - **[docs/RANCHER_API_TOKEN_CREATION.md](docs/RANCHER_API_TOKEN_CREATION.md)** - How API tokens are created automatically, manual creation with curl
 - **[docs/RANCHER_DOWNSTREAM_MANAGEMENT.md](docs/RANCHER_DOWNSTREAM_MANAGEMENT.md)** - Automatic downstream cluster registration with Rancher Manager
