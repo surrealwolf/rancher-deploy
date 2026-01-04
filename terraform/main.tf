@@ -123,7 +123,7 @@ module "rancher_manager_additional" {
   gateway     = var.clusters["manager"].gateway
   dns_servers = var.clusters["manager"].dns_servers
   domain      = var.clusters["manager"].domain
-  vlan_id     = 14
+  vlan_id     = var.clusters["manager"].vlan_id
 
   ssh_private_key = var.ssh_private_key
 
@@ -269,7 +269,7 @@ module "nprd_apps_additional" {
   gateway     = var.clusters["nprd-apps"].gateway
   dns_servers = var.clusters["nprd-apps"].dns_servers
   domain      = var.clusters["nprd-apps"].domain
-  vlan_id     = 14
+  vlan_id     = var.clusters["nprd-apps"].vlan_id
 
   ssh_private_key = var.ssh_private_key
 
