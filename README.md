@@ -168,7 +168,8 @@ Core documentation for deployment and troubleshooting:
 - **[docs/API_TOKEN_AND_PERMISSIONS.md](docs/API_TOKEN_AND_PERMISSIONS.md)** - Proxmox API token creation and minimum required permissions for end-to-end deployment
 - **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough, includes kubectl tools setup
 - **[docs/RANCHER_API_TOKEN_CREATION.md](docs/RANCHER_API_TOKEN_CREATION.md)** - How API tokens are created automatically, manual creation with curl
-- **[docs/RANCHER_DOWNSTREAM_MANAGEMENT.md](docs/RANCHER_DOWNSTREAM_MANAGEMENT.md)** - Automatic downstream cluster registration with Rancher Manager
+- **[docs/RANCHER_DOWNSTREAM_MANAGEMENT.md](docs/RANCHER_DOWNSTREAM_MANAGEMENT.md)** - Automatic downstream cluster registration with Rancher Manager (manifest-based)
+- **[docs/DOWNSTREAM_REGISTRATION_FINDINGS.md](docs/DOWNSTREAM_REGISTRATION_FINDINGS.md)** - Technical findings on manifest-based vs. system-agent registration approach
 - **[docs/DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md)** - DNS records required for Rancher and Kubernetes API access
 - **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning and VM configuration
 - **[docs/MODULES_AND_AUTOMATION.md](docs/MODULES_AND_AUTOMATION.md)** - Terraform modules, variables, and automation details
