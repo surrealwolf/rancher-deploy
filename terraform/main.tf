@@ -536,7 +536,7 @@ resource "null_resource" "merge_kubeconfigs" {
   }
 
   depends_on = [
-    null_resource.register_nprd_cluster
+    module.rancher_downstream_registration
   ]
 }
 
