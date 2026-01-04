@@ -253,7 +253,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
         # RKE2 installation
         "cat > /tmp/rke2-install.sh <<'RKEEOF'\n${file("${path.module}/cloud-init-rke2.sh")}\nRKEEOF",
         "chmod +x /tmp/rke2-install.sh",
-        "IS_RKE2_SERVER=${var.is_rke2_server} RKE2_VERSION=${var.rke2_version} SERVER_IP=${var.rke2_server_ip} SERVER_TOKEN=${var.rke2_server_token} CLUSTER_HOSTNAME=${var.cluster_hostname} CLUSTER_PRIMARY_IP=${var.cluster_primary_ip} CLUSTER_ALIASES='${join(",", var.cluster_aliases)}' sudo -E bash /tmp/rke2-install.sh"
+        "IS_RKE2_SERVER=${var.is_rke2_server} RKE2_VERSION=${var.rke2_version} SERVER_IP=${var.rke2_server_ip} SERVER_TOKEN=${var.rke2_server_token} CLUSTER_HOSTNAME=${var.cluster_hostname} CLUSTER_PRIMARY_IP=${var.cluster_primary_ip} CLUSTER_ALIASES='${join(",", var.cluster_aliases)}' DNS_SERVERS='${join(" ", var.dns_servers)}' sudo -E bash /tmp/rke2-install.sh"
       ],
       # Add Rancher registration if this is a server node and registration is enabled
       var.register_with_rancher && var.is_rke2_server ? [

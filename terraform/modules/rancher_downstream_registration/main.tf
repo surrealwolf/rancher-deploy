@@ -107,15 +107,18 @@ resource "null_resource" "register_downstream_cluster" {
       echo "  Registering ${node_name} (${node_ip})..."
       
       # Apply manifest to the node using kubectl
-      if ssh -i "$SSH_KEY" \
+      REGISTRATION_OUTPUT=$(ssh -i "$SSH_KEY" \
         -o StrictHostKeyChecking=no \
         -o ConnectTimeout=10 \
         -o UserKnownHostsFile=/dev/null \
         "$SSH_USER@${node_ip}" \
-        "curl -sk $MANIFEST_URL | sudo /var/lib/rancher/rke2/bin/kubectl apply -f -" 2>&1 | grep -q "created\|unchanged"; then
+        "curl -sk $MANIFEST_URL | sudo /var/lib/rancher/rke2/bin/kubectl apply -f -" 2>&1)
+      
+      if echo "$REGISTRATION_OUTPUT" | grep -qE "(created|unchanged)"; then
         echo "  ✓ Registered ${node_name}"
       else
         echo "  ⚠ Registration on ${node_name} may have failed"
+        echo "  Output: $(echo "$REGISTRATION_OUTPUT" | head -5)"
       fi
       %{ endfor ~}
       
