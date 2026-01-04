@@ -412,6 +412,7 @@ module "rke2_apps" {
   source = "./modules/rke2_downstream_cluster"
 
   cluster_name         = "nprd-apps"
+  cluster_hostname     = var.apps_cluster_hostname  # Use FQDN instead of IP
   agent_ips            = concat(
     [split("/", module.nprd_apps_primary.ip_address)[0]],
     [for node in module.nprd_apps_additional : split("/", node.ip_address)[0]]

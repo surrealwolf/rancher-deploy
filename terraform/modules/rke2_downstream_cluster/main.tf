@@ -28,9 +28,13 @@ variable "ssh_user" {
   default     = "ubuntu"
 }
 
+variable "cluster_hostname" {
+  description = "FQDN for the cluster (e.g., nprd-apps.dataknife.net) - used in kubeconfig"
+  type        = string
+}
+
 # NOTE: RKE2 is installed via cloud-init during VM provisioning
-# This module handles verification of downstream/agent clusters only
-# (no kubeconfig retrieval since agents don't host the API server)
+# This module handles verification and kubeconfig retrieval for downstream clusters
 
 # Clean up SSH known_hosts for all agent IPs
 resource "null_resource" "cleanup_known_hosts" {
@@ -70,6 +74,26 @@ resource "null_resource" "wait_for_agent_nodes" {
   }
 
   depends_on = [null_resource.cleanup_known_hosts]
+}
+
+# Retrieve kubeconfig from primary downstream node
+resource "null_resource" "get_kubeconfig" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "Retrieving actual kubeconfig from RKE2 downstream server..."
+      mkdir -p ~/.kube
+      ssh -i ${var.ssh_private_key_path} -o StrictHostKeyChecking=no ${var.ssh_user}@${var.agent_ips[0]} 'sudo cat /etc/rancher/rke2/rke2.yaml' | sed 's/127.0.0.1/${var.cluster_hostname}/' > ~/.kube/${var.cluster_name}.yaml
+      chmod 600 ~/.kube/${var.cluster_name}.yaml
+      echo "✓ Downstream kubeconfig updated with real credentials"
+    EOT
+  }
+
+  depends_on = [null_resource.wait_for_agent_nodes]
+}
+
+output "api_server_url" {
+  description = "Kubernetes API server URL"
+  value       = "https://${var.cluster_hostname}:6443"
 }
 
 output "cluster_name" {

@@ -97,7 +97,7 @@ resource "null_resource" "register_downstream_cluster" {
       # Step 2: Fetch cluster registration manifest
       echo "[2/3] Fetching cluster registration manifest from Rancher..."
       
-      MANIFEST_URL="$RANCHER_URL/v3/import/$TOKEN_VALUE$CLUSTER_ID.yaml"
+      MANIFEST_URL="$RANCHER_URL/v3/import/${TOKEN_VALUE}_${CLUSTER_ID}.yaml"
       
       # Download and apply manifest to each node
       echo "[3/3] Applying registration manifest to cluster nodes..."
