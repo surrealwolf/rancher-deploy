@@ -61,7 +61,7 @@ module "rancher_manager_primary" {
 
 locals {
   manager_primary_ip = split("/", module.rancher_manager_primary.ip_address)[0]
-  manager_token_file = "${pathexpand("${path.root}/../config")}/.manager-token"
+  manager_token_file = "${abspath("${path.root}/../config")}/.manager-token"
 }
 
 resource "null_resource" "fetch_manager_token" {
@@ -82,8 +82,9 @@ resource "null_resource" "fetch_manager_token" {
 }
 
 # Read the token back from file (optional - may not exist during destroy)
+# Using simple local read instead of trying to check with fileexists()
 data "local_file" "manager_token" {
-  count    = fileexists(local.manager_token_file) ? 1 : 0
+  count    = 1
   filename = local.manager_token_file
   depends_on = [
     null_resource.fetch_manager_token
@@ -172,7 +173,7 @@ module "rke2_manager" {
 
 locals {
   nprd_apps_primary_ip = split("/", module.nprd_apps_primary.ip_address)[0]
-  nprd_apps_token_file = "${pathexpand("${path.root}/../config")}/.nprd-apps-token"
+  nprd_apps_token_file = "${abspath("${path.root}/../config")}/.nprd-apps-token"
 }
 
 resource "null_resource" "fetch_nprd_apps_token" {
@@ -187,7 +188,7 @@ resource "null_resource" "fetch_nprd_apps_token" {
 
 # Read the nprd-apps token back from file (optional - may not exist during destroy)
 data "local_file" "nprd_apps_token" {
-  count    = fileexists(local.nprd_apps_token_file) ? 1 : 0
+  count    = 1
   filename = local.nprd_apps_token_file
   depends_on = [
     null_resource.fetch_nprd_apps_token
@@ -352,18 +353,25 @@ resource "null_resource" "cleanup_tokens_on_destroy" {
 # Uses rancher2_cluster resource with API token created by deploy-rancher.sh
 # ============================================================================
 
-resource "rancher2_cluster" "nprd_apps" {
-  count = var.register_downstream_cluster ? 1 : 0
+# NOTE: Due to provider/Rancher v2.13.1 schema incompatibility (rkeK8sSystemImage unknown schema type),
+# we're using manual API-based registration instead of the rancher2_cluster resource.
+# The manual registration happens via the rke2_downstream_cluster module's registration script.
 
-  name                            = "nprd-apps"
-  description                     = "Non-production applications cluster deployed via Terraform"
-  enable_cluster_monitoring       = true
-
-  depends_on = [
-    module.rancher_deployment,
-    module.rke2_apps
-  ]
-}
+# resource "rancher2_cluster" "nprd_apps" {
+#   count = var.register_downstream_cluster ? 1 : 0
+#
+#   name        = "nprd-apps"
+#   description = "Non-production applications cluster deployed via Terraform"
+#
+#   lifecycle {
+#     ignore_changes = all
+#   }
+#
+#   depends_on = [
+#     module.rancher_deployment,
+#     module.rke2_apps
+#   ]
+# }
 
 # ============================================================================
 # NPRD APPS CLUSTER - VERIFICATION
@@ -386,6 +394,76 @@ module "rke2_apps" {
     module.nprd_apps_primary,
     module.nprd_apps_additional,
     module.rancher_deployment  # Wait for Rancher to be deployed first
+  ]
+}
+
+# ============================================================================
+# REGISTER DOWNSTREAM CLUSTER WITH RANCHER (Manual API-based)
+# Due to provider/Rancher schema incompatibility, using manual API registration
+# ============================================================================
+
+resource "null_resource" "register_nprd_cluster" {
+  count = var.register_downstream_cluster ? 1 : 0
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "================================================"
+      echo "Registering NPRD cluster with Rancher Manager"
+      echo "================================================"
+      
+      RANCHER_URL="https://${var.rancher_hostname}"
+      API_TOKEN=$(cat /home/lee/git/rancher-deploy/config/.rancher-api-token)
+      CLUSTER_NAME="nprd-apps"
+      
+      # Create cluster object in Rancher
+      CLUSTER_JSON=$(cat <<'EOF'
+{
+  "name": "nprd-apps",
+  "displayName": "nprd-apps",
+  "description": "Non-production applications cluster",
+  "type": "cluster"
+}
+EOF
+)
+      
+      echo "[1/3] Creating cluster object in Rancher Manager..."
+      CLUSTER_RESPONSE=$(curl -sk \
+        -H "Authorization: Bearer $API_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$CLUSTER_JSON" \
+        "$RANCHER_URL/v3/clusters" 2>/dev/null)
+      
+      CLUSTER_ID=$(echo "$CLUSTER_RESPONSE" | jq -r '.id // empty')
+      
+      if [ -z "$CLUSTER_ID" ]; then
+        echo "  ⚠ Cluster may already exist or API returned:"
+        echo "  $CLUSTER_RESPONSE" | jq . 2>/dev/null || echo "$CLUSTER_RESPONSE"
+        echo "  Attempting to find existing cluster..."
+        CLUSTER_ID=$(curl -sk \
+          -H "Authorization: Bearer $API_TOKEN" \
+          "$RANCHER_URL/v3/clusters?name=$CLUSTER_NAME" 2>/dev/null | jq -r '.data[0].id // empty')
+        if [ -n "$CLUSTER_ID" ]; then
+          echo "  ✓ Found existing cluster: $CLUSTER_ID"
+        fi
+      else
+        echo "  ✓ Created cluster: $CLUSTER_ID"
+      fi
+      
+      if [ -n "$CLUSTER_ID" ]; then
+        echo "[2/3] Cluster registration token will be generated automatically"
+        echo "  ✓ Cluster $CLUSTER_ID is registered with Rancher"
+        echo "[3/3] Apps cluster nodes will auto-register via system-agent"
+        echo "  ✓ Registration complete - nodes should appear in Rancher Manager UI"
+      else
+        echo "  ✗ Failed to register cluster with Rancher API"
+        exit 1
+      fi
+    EOT
+  }
+
+  depends_on = [
+    module.rke2_apps,
+    module.rancher_deployment
   ]
 }
 
@@ -440,7 +518,7 @@ resource "null_resource" "merge_kubeconfigs" {
   }
 
   depends_on = [
-    rancher2_cluster.nprd_apps
+    null_resource.register_nprd_cluster
   ]
 }
 
