@@ -46,57 +46,26 @@ Your workstation/CI runner executing Terraform must have:
 
 Your Proxmox VE cluster must have:
 
-- **Proxmox VE**: Version 8.0 or later
-- **Available Resources**:
-  - **CPU**: 24 vCPU cores minimum (12 for manager cluster, 12 for apps cluster)
-  - **RAM**: 48GB minimum (24GB for manager, 24GB for apps)
-  - **Storage**: 600GB minimum (120GB per 6 VMs + image cache)
-  - **Network**: Access to local network segment for VMs + external for RKE2/Rancher downloads
-
-- **Networking**:
-  - VLAN support (default VLAN 14 for unified cluster management)
-  - DHCP or static IP capability for cloud-init configuration
-  - Access to external DNS (1.1.1.1 or local 192.168.1.1)
-  - Internet access for downloading Ubuntu cloud images and RKE2 releases
-
-- **Storage**:
-  - At least one datastore with 600GB free space (`local-vm-zfs` or similar)
-  - Recommended: SSD or NVMe for better performance
-  - Support for qcow2 cloud image format
-
-- **API Access**:
-  - Proxmox API token with required permissions (see [API_TOKEN_AND_PERMISSIONS.md](docs/API_TOKEN_AND_PERMISSIONS.md))
-  - API endpoint accessible from your workstation (typically `https://<proxmox-ip>:8006`)
+- **Proxmox VE 8.0+** with API token access
+- **Resources**: 24 vCPU cores, 48GB RAM, 600GB storage minimum
+- **Storage**: SSD/NVMe datastore (`local-vm-zfs` or similar) with qcow2 support
+- **Networking**: VLAN 14 support, DHCP/static IP capability, internet access
+- **DNS**: Access to 192.168.1.1 (local) or 1.1.1.1 (fallback)
+- **API Token**: Required permissions listed in [API_TOKEN_AND_PERMISSIONS.md](docs/API_TOKEN_AND_PERMISSIONS.md)
 
 ### Network Requirements
 
-Connectivity from **local system** to:
-- ✅ Proxmox API endpoint (`https://<proxmox-ip>:8006/api2/json`)
-- ✅ Proxmox SSH (typically port 22)
-- ✅ Internet (for downloads): github.com, get.rke2.io, cloud-images.ubuntu.com, docker.io, quay.io
+**From local system:**
+- Proxmox API (`https://<proxmox-ip>:8006`) and SSH
+- Internet: github.com, get.rke2.io, cloud-images.ubuntu.com, docker.io, quay.io
 
-Connectivity from **Proxmox VMs** to:
-- ✅ Internet: github.com, get.rke2.io (for RKE2 installer)
-- ✅ docker.io, quay.io (for container images)
-- ✅ Local DNS/Gateway for networking (192.168.1.1 or equivalent)
+**From Proxmox VMs:**
+- Internet for RKE2 installer and container images
+- Local DNS/Gateway (192.168.1.1 or equivalent)
 
-### DNS and Hostname Requirements
+### DNS Requirements
 
-For Rancher to function properly:
-
-- **DNS Records** required (A and CNAME):
-  ```
-  manager.example.com          IN A 192.168.1.100
-  manager.example.com          IN A 192.168.1.101
-  manager.example.com          IN A 192.168.1.102
-  rancher.example.com          IN CNAME manager.example.com
-  nprd-apps.example.com        IN A 192.168.1.110
-  nprd-apps.example.com        IN A 192.168.1.111
-  nprd-apps.example.com        IN A 192.168.1.112
-  ```
-
-- **Domain name**: Must resolve to all 3 manager cluster nodes for HA
-- **See [DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md)** for detailed DNS setup
+Rancher requires DNS records pointing to all 3 manager nodes for HA. See [DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md) for configuration examples.
 
 ### Supported Platforms
 
@@ -113,60 +82,17 @@ For Rancher to function properly:
 - ✅ Any specific RKE2 release tag (change `rke2_version` in terraform.tfvars)
 - ❌ "latest" tag (not supported - must use specific version)
 
-#### Kubernetes
-- ✅ RKE2 v1.32+ (supported)
-- ✅ High Availability (3+ manager nodes recommended)
-- ❌ Single-node clusters (requires manual tfvars modification)
+#### Other
+- ✅ RKE2 v1.32+
+- ✅ Rancher v2.7.x and v2.8.x
+- ✅ containerd runtime
+- ✅ QEMU/KVM hypervisor
 
-#### Rancher
-- ✅ Rancher v2.7.x (tested, default)
-- ✅ Rancher v2.8.x (supported)
-- ⚠️ Must have valid TLS certificate or use self-signed (auto-generated)
+### Unsupported
 
-#### Container Runtimes
-- ✅ containerd (RKE2 default, auto-configured)
-
-#### Hypervisors (as cloud image targets)
-- ✅ QEMU/KVM (Proxmox default)
-
-### API Token Permissions
-
-Your Proxmox API token requires these minimum permissions:
-
-| Permission | Purpose |
-|---|---|
-| `Datastore.Allocate` | Create and modify datastores |
-| `Datastore.Browse` | Access datastore contents |
-| `Nodes.Shutdown` | Reboot nodes |
-| `Qemu.Allocate` | Create and modify VMs |
-| `Qemu.Clone` | Clone VMs |
-| `Qemu.Console` | Access VM console |
-| `Qemu.Config.*` | Configure VM settings |
-| `Qemu.PowerMgmt` | Start/stop/reboot VMs |
-
-**See [docs/API_TOKEN_AND_PERMISSIONS.md](docs/API_TOKEN_AND_PERMISSIONS.md)** for step-by-step token creation guide and complete permissions reference.
-
-### Unsupported / Out of Scope
-
-- ❌ Single-node Proxmox deployments (requires HA infrastructure)
-- ❌ Non-QEMU hypervisors
-- ❌ Bare metal deployments (use Proxmox VE or similar)
-- ❌ Azure, AWS, GCP clouds (Proxmox-only platform)
-- ❌ Kubernetes upgrade automation (manual upgrade required)
-- ❌ Multi-cluster federation (can deploy multiple independent clusters)
-- ❌ Windows VMs (Ubuntu Linux only)
-
-## Prerequisites Summary
-
-This is a quick summary. See **[Requirements](#requirements)** section above for detailed information:
-
-- **Proxmox VE**: 8.0+ with API token access
-- **Terraform**: v1.5 or later
-- **SSH Key**: For VM authentication
-- **Available Resources**: 24 vCPU cores, 48GB RAM, 600GB storage
-- **Shell**: `bash` or `zsh` (recommended; Fish shell not ideal for AI-assistant compatibility)
-
-For complete requirements including local system setup, network access, DNS configuration, and API token permissions, see the **[Requirements](#requirements)** section above.
+- Single-node Proxmox, non-QEMU hypervisors, bare metal
+- Cloud deployments (Azure, AWS, GCP)
+- Kubernetes upgrades, multi-cluster federation, Windows VMs
 
 ## Quick Start
 
@@ -214,35 +140,11 @@ terraform plan
 terraform apply -auto-approve
 ```
 
-**Note**: The `apply.sh` script automatically:
-- Enables debug logging (`TF_LOG=debug`)
-- Saves logs to: `terraform/terraform-<timestamp>.log`
-- Runs terraform apply with auto-approval in background
-- Handles all flags internally - just run `./apply.sh`
-- Deploys VMs + RKE2 clusters + Rancher in **one step** ✅
+**Note**: `apply.sh` enables debug logging, saves to `terraform/terraform-<timestamp>.log`, deploys everything in ~35-40 minutes.
 
-**Single-Step Deployment:**
-You can deploy everything in one command:
-```bash
-./scripts/apply.sh
-# Automatically deploys:
-# 1. VMs (2-3 min)
-# 2. RKE2 clusters (10-15 min)
-# 3. Rancher (10-15 min)
-# Complete deployment: ~35-40 minutes
-```
-
-See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md#deploy-rancher-automatic-with-single-apply) for single-apply Rancher deployment details.
-
-**⚠️ Critical: RKE2 Version**
-- Use specific released version: `v1.34.3+rke2r1`
-- Do NOT use `"latest"` - it will fail (not a downloadable release)
-- Check available versions: https://github.com/rancher/rke2/tags
-
-**⚠️ Critical: RKE2 Port Configuration (HA Clusters)**
-- **Port 9345**: Server registration (secondary nodes join primary)
-- **Port 6443**: Kubernetes API (kubectl, only after cluster initialized)
-- Configured automatically via cloud-init
+**⚠️ Important**:
+- RKE2 version must be specific release (e.g., `v1.34.3+rke2r1`), not "latest"
+- Ports 9345 (server) and 6443 (API) configured automatically
 
 ### 4. Verify Deployment
 
@@ -321,163 +223,10 @@ The deployment uses the **bpg/proxmox Terraform provider** (v0.90) with:
 Each VM is automatically configured with:
 - Cloud-init for OS customization
 - Network settings (VLAN 14, static IP, DNS)
-- SSH key-based authentication
-- Hostname and domain configuration
-
-### Cluster Orchestration
-
-- Manager cluster created first
-- Apps cluster waits for manager completion
-- Explicit dependencies ensure proper sequencing
-- Total deployment time: ~2-3 minutes for all 6 VMs
-
-## Usage
-
-### Deployment
-
-```bash
-cd terraform
-
-# Initialize Terraform
-terraform init
-
-# Plan changes
-terraform plan -out=tfplan
-
-# Apply configuration
-terraform apply tfplan
-```
-
-### Outputs
-
-After successful deployment:
-
-```bash
-# Get manager cluster IPs
-terraform output rancher_manager_ip
-
-# Get apps cluster IPs
-terraform output nprd_apps_cluster_ips
-```
-
-### Testing Access
-
-```bash
-# SSH to a node
-ssh -i ~/.ssh/id_rsa ubuntu@192.168.1.100
-
-# Verify network
-ping 192.168.1.101
-```
-
-### Cleanup
-
-```bash
-terraform destroy
-```
-
-## Configuration
-
-### Edit Variables
-
-File: `terraform/terraform.tfvars`
-
-```hcl
-# Proxmox API credentials
-proxmox_api_url          = "https://proxmox.example.com:8006/api2/json"
-proxmox_api_user         = "terraform@pam"
-proxmox_api_token_id     = "your-token-id"
-proxmox_api_token_secret = "your-token-secret"
-
-# Proxmox settings
-proxmox_node   = "pve1"
-proxmox_storage = "local-vm-zfs"
-
-# VM configuration
-vm_template_id = 400
-ssh_private_key = "~/.ssh/id_rsa"
-
-# Cluster settings
-clusters = {
-  manager = {
-    gateway     = "192.168.1.1"
-    dns_servers = ["192.168.1.1", "192.168.1.2"]
-    domain      = "example.com"
-  }
-  nprd-apps = {
-    gateway     = "192.168.1.1"
-    dns_servers = ["192.168.1.1", "192.168.1.2"]
-    domain      = "example.com"
-  }
-}
-```
-
-## Troubleshooting
-
-### Common Issues
-
-- **VM creation timeout**: Check Proxmox task history, enable debug logging
-- **Network not responding**: Verify VLAN 14 configuration on vmbr0
-- **SSH connection refused**: Ensure cloud-init completed, check authorized_keys
-- **Authentication failed**: Verify API token credentials and permissions
-
-See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions.
-
-### Debug Logging
-
-```bash
-# Enable debug output for Terraform
-export TF_LOG=debug
-terraform apply
-
-# Enable debug output for Proxmox provider
-export PROXMOX_LOG_LEVEL=debug
-terraform apply
-```
-
-## Performance
-
-Deployment timing (typical):
-- Single VM creation: 20-30 seconds
-- 3-node cluster: 1-1.5 minutes
-- All 6 VMs (sequential): 2-3 minutes
-- All 6 VMs (parallelized): 1-2 minutes
-
-## Provider Information
-
-**Terraform Provider**: bpg/proxmox v0.90.0
-
-**Features:**
-- ✅ Reliable task polling with exponential backoff retry
-- ✅ Better error messages and diagnostics
-- ✅ Full Proxmox VE 8.x and 9.x support
-- ✅ Improved cloud-init integration
-- ✅ Active community (1.7K+ stars, 130+ contributors)
-
-## Next Steps
-
-1. **Review Architecture**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-2. **Follow Deployment Guide**: [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
-3. **Deploy with Terraform**: [TERRAFORM_GUIDE.md](docs/TERRAFORM_GUIDE.md)
-4. **Install Kubernetes**: Set up K3s on deployed nodes
-5. **Install Rancher**: Deploy Rancher on manager cluster
-
-## Support & Resources
-
-- **Proxmox Documentation**: https://pve.proxmox.com/wiki/Main_Page
-- **Terraform Docs**: https://www.terraform.io/docs/
-- **Rancher Docs**: https://rancher.com/docs/
 
 ## Contributing
 
-Thank you for your interest in contributing! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Development setup and workflow
-- Code standards and testing procedures
-- Pull request guidelines
-- Issue reporting guidelines
-- RKE2 version management guidelines
-
-We're committed to maintaining a welcoming community - see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for our standards.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and code standards. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community standards.
 
 ## Changelog
 
