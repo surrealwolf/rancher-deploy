@@ -34,6 +34,7 @@ example.tfvars
 # Logs
 *.log
 terraform_deploy.log
+logs/
 
 # RKE2 Tokens (sensitive)
 .manager-token

@@ -129,6 +129,67 @@ if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
 fi
 echo ""
 
+# ============================================================================
+# CREATE RANCHER API TOKEN FOR DOWNSTREAM CLUSTER REGISTRATION
+# ============================================================================
+
+echo "Creating Rancher API token for downstream cluster registration..."
+echo ""
+
+# Step 1: Authenticate with Rancher using admin credentials
+echo "Step 1: Authenticating with Rancher..."
+LOGIN_RESPONSE=$(curl -s -X POST \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"admin\",\"password\":\"$RANCHER_PASSWORD\"}" \
+  -k "https://$RANCHER_HOSTNAME/v3-public/localProviders/local?action=login")
+
+# Extract temporary token
+TEMP_TOKEN=$(echo "$LOGIN_RESPONSE" | grep -o '"token":"[^"]*' | head -1 | cut -d'"' -f4)
+
+if [ -z "$TEMP_TOKEN" ]; then
+  echo "WARNING: Failed to authenticate with Rancher API"
+  echo "  Response: $LOGIN_RESPONSE"
+  echo "  Skipping API token creation - you can create it manually later"
+  echo ""
+else
+  echo "✓ Authenticated with Rancher"
+  echo ""
+
+  # Step 2: Create permanent API token
+  echo "Step 2: Creating API token..."
+  TOKEN_RESPONSE=$(curl -s -X POST \
+    -H "Authorization: Bearer $TEMP_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "type": "token",
+      "description": "Terraform automation token for downstream cluster registration",
+      "ttl": 0,
+      "isDerived": false
+    }' \
+    -k "https://$RANCHER_HOSTNAME/v3/tokens")
+
+  # Extract the API token
+  API_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"token":"[^"]*' | head -1 | cut -d'"' -f4)
+
+  if [ -z "$API_TOKEN" ]; then
+    echo "WARNING: Failed to create API token"
+    echo "  Response: $TOKEN_RESPONSE"
+    echo "  You can create the token manually via Rancher UI or script"
+    echo ""
+  else
+    echo "✓ API token created successfully"
+    echo ""
+    echo "=========================================="
+    echo "Rancher API Token:"
+    echo "=========================================="
+    echo "$API_TOKEN"
+    echo ""
+    echo "Token saved. Add to terraform/terraform.tfvars:"
+    echo "  rancher_api_token = \"$API_TOKEN\""
+    echo ""
+  fi
+fi
+
 # Merge kubeconfig to default kubeconfig
 echo "Merging kubeconfig to ~/.kube/config..."
 if [ -f "$KUBECONFIG" ]; then

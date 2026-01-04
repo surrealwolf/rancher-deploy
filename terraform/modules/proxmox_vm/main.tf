@@ -122,6 +122,37 @@ variable "rke2_is_primary" {
   type        = bool
   default     = false
 }
+
+variable "register_with_rancher" {
+  description = "Whether to register this RKE2 cluster with Rancher Manager"
+  type        = bool
+  default     = false
+}
+
+variable "rancher_hostname" {
+  description = "Rancher Manager hostname for downstream registration"
+  type        = string
+  default     = ""
+}
+
+variable "rancher_ingress_ip" {
+  description = "Rancher ingress IP for /etc/hosts entry during registration"
+  type        = string
+  default     = ""
+}
+
+variable "rancher_registration_token" {
+  description = "Token for registering with Rancher Manager"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "rancher_ca_checksum" {
+  description = "CA certificate checksum for Rancher HTTPS verification"
+  type        = string
+  default     = ""
+}
 output "vm_id" {
   value = proxmox_virtual_environment_vm.vm.vm_id
 }
@@ -189,13 +220,25 @@ resource "proxmox_virtual_environment_vm" "vm" {
     }
   }
 
-  # Apply RKE2 installation via cloud-init provisioner if enabled
+  # Apply RKE2 installation via provisioner if enabled
   provisioner "remote-exec" {
-    inline = var.rke2_enabled ? [
-      "cat > /tmp/rke2-install.sh <<'RKEEOF'\n${file("${path.module}/cloud-init-rke2.sh")}\nRKEEOF",
-      "chmod +x /tmp/rke2-install.sh",
-      "IS_RKE2_SERVER=${var.is_rke2_server} RKE2_VERSION=${var.rke2_version} SERVER_IP=${var.rke2_server_ip} SERVER_TOKEN=${var.rke2_server_token} sudo -E bash /tmp/rke2-install.sh"
-    ] : ["echo 'RKE2 disabled, skipping installation'"]
+    inline = var.rke2_enabled ? concat(
+      [
+        # RKE2 installation
+        "cat > /tmp/rke2-install.sh <<'RKEEOF'\n${file("${path.module}/cloud-init-rke2.sh")}\nRKEEOF",
+        "chmod +x /tmp/rke2-install.sh",
+        "IS_RKE2_SERVER=${var.is_rke2_server} RKE2_VERSION=${var.rke2_version} SERVER_IP=${var.rke2_server_ip} SERVER_TOKEN=${var.rke2_server_token} sudo -E bash /tmp/rke2-install.sh"
+      ],
+      # Add Rancher registration if this is a server node and registration is enabled
+      var.register_with_rancher && var.is_rke2_server ? [
+        # Add hosts entry for Rancher hostname
+        "echo '${var.rancher_ingress_ip} ${var.rancher_hostname}' | sudo tee -a /etc/hosts > /dev/null",
+        # Wait for RKE2 to be ready (token file should exist)
+        "for i in {1..120}; do [ -f /var/lib/rancher/rke2/server/node-token ] && echo 'RKE2 ready!' && break || (echo 'Waiting for RKE2 token... $i/120' && sleep 5); done",
+        # Download and execute Rancher system-agent installation
+        "curl -kfL https://${var.rancher_hostname}/system-agent-install.sh | sudo sh -s - --server https://${var.rancher_hostname} --label 'cattle.io/os=linux' --token ${var.rancher_registration_token} --ca-checksum ${var.rancher_ca_checksum} --etcd --controlplane --worker"
+      ] : []
+    ) : ["echo 'RKE2 disabled, skipping installation'"]
 
     connection {
       type        = "ssh"

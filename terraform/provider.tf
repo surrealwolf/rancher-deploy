@@ -5,6 +5,10 @@ terraform {
       source  = "bpg/proxmox"
       version = "~> 0.90"
     }
+    rancher2 = {
+      source  = "rancher/rancher2"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -23,4 +27,13 @@ provider "proxmox" {
     agent    = true
     username = "root"
   }
+}
+
+# Rancher2 Provider - for downstream cluster management (Optional)
+# Only used if register_downstream_cluster = true
+# Requires rancher_api_token to be set in terraform.tfvars
+provider "rancher2" {
+  api_url   = "https://${var.rancher_hostname}"
+  token_key = var.rancher_api_token != "" ? var.rancher_api_token : "placeholder-will-not-be-used"
+  insecure  = true  # For self-signed certificates
 }

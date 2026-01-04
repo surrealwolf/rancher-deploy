@@ -1,11 +1,14 @@
 #!/bin/bash
 # Terraform plan + apply with automatic logging
 # Runs plan in background, then applies
-# Usage: ./apply.sh [terraform-args]
+# Usage: ./scripts/apply.sh [terraform-args]
 
 set -e
 
-LOG_FILE="terraform-$(date +%s).log"
+LOG_DIR="../logs"
+mkdir -p "$LOG_DIR"
+
+LOG_FILE="$LOG_DIR/terraform-$(date +%s).log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 echo "═══════════════════════════════════════════════════════════"
@@ -13,10 +16,10 @@ echo "Terraform Plan + Apply with Logging"
 echo "═══════════════════════════════════════════════════════════"
 echo "Timestamp: $TIMESTAMP"
 echo "Log Level: DEBUG"
-echo "Log File: terraform/$LOG_FILE"
+echo "Log File: $LOG_FILE"
 echo "───────────────────────────────────────────────────────────"
 
-cd /home/lee/git/rancher-deploy/terraform
+cd "$(dirname "$(cd "$(dirname "$0")" && pwd)")/terraform"
 
 # Enable debug logging
 export TF_LOG=debug
@@ -35,7 +38,7 @@ fi
 echo ""
 echo "Plan complete, starting apply in background..."
 echo "PID: $$"
-echo "Logs: terraform/$LOG_FILE"
+echo "Logs: $LOG_FILE"
 echo ""
 
 # Run apply in background
@@ -44,5 +47,4 @@ APPLY_PID=$!
 
 echo "Apply started (PID: $APPLY_PID)"
 echo "You can monitor progress with:"
-echo "  tail -f terraform/$LOG_FILE"
-echo ""
+echo "  tail -f $LOG_FILE"

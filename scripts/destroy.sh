@@ -1,11 +1,14 @@
 #!/bin/bash
 # Terraform destroy with automatic logging and cleanup
 # Similar to apply.sh but for infrastructure teardown
-# Usage: ./destroy.sh [terraform-args]
+# Usage: ./scripts/destroy.sh [terraform-args]
 
 set -e
 
-LOG_FILE="terraform-destroy-$(date +%s).log"
+LOG_DIR="../logs"
+mkdir -p "$LOG_DIR"
+
+LOG_FILE="$LOG_DIR/terraform-destroy-$(date +%s).log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 echo "═══════════════════════════════════════════════════════════"
@@ -13,7 +16,7 @@ echo "Terraform Destroy with Logging and Cleanup"
 echo "═══════════════════════════════════════════════════════════"
 echo "Timestamp: $TIMESTAMP"
 echo "Log Level: DEBUG"
-echo "Log File: terraform/$LOG_FILE"
+echo "Log File: $LOG_FILE"
 echo "───────────────────────────────────────────────────────────"
 echo ""
 echo "⚠️  WARNING: This will destroy ALL infrastructure"
@@ -32,7 +35,7 @@ if [ "$confirm" != "destroy-all" ]; then
   exit 0
 fi
 
-cd /home/lee/git/rancher-deploy/terraform
+cd "$(dirname "$(cd "$(dirname "$0")" && pwd)")/terraform"
 
 # Enable debug logging
 export TF_LOG=debug
@@ -41,7 +44,7 @@ export TF_LOG_PATH="$LOG_FILE"
 echo ""
 echo "Starting terraform destroy in background..."
 echo "PID: $$"
-echo "Logs: terraform/$LOG_FILE"
+echo "Logs: $LOG_FILE"
 echo ""
 
 # Run destroy in background with auto-approve and parallelism
@@ -50,7 +53,7 @@ DESTROY_PID=$!
 
 echo "Destroy started (PID: $DESTROY_PID)"
 echo "You can monitor progress with:"
-echo "  tail -f terraform/$LOG_FILE"
+echo "  tail -f $LOG_FILE"
 echo ""
 
 # Wait for destroy to complete
@@ -64,7 +67,7 @@ echo "Cleanup: Removing local files..."
 echo "───────────────────────────────────────────────────────────"
 
 # Clean up token files
-rm -fv /home/lee/git/rancher-deploy/terraform/.manager-token 2>/dev/null || true
+rm -fv terraform/.manager-token 2>/dev/null || true
 
 # Clean up kubeconfig
 rm -fv ~/.kube/rancher-manager.yaml 2>/dev/null || true

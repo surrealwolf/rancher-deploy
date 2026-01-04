@@ -59,7 +59,7 @@ From the root directory:
 
 ```bash
 # Deploy with automatic logging (recommended)
-./apply.sh
+./scripts/apply.sh
 
 # Or manually from terraform directory
 cd terraform
@@ -76,9 +76,9 @@ terraform apply -auto-approve
 - Deploys VMs + RKE2 clusters + Rancher in **one step** ✅
 
 **Single-Step Deployment:**
-With Solution 1 implementation, you can now deploy everything in one `terraform apply`:
+You can deploy everything in one command:
 ```bash
-./apply.sh
+./scripts/apply.sh
 # Automatically deploys:
 # 1. VMs (2-3 min)
 # 2. RKE2 clusters (10-15 min)
@@ -117,39 +117,46 @@ terraform output rancher_url
 
 Core documentation for deployment and troubleshooting:
 
+- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough, includes kubectl tools setup
+- **[docs/RANCHER_API_TOKEN_CREATION.md](docs/RANCHER_API_TOKEN_CREATION.md)** - How API tokens are created automatically, manual creation with curl
+- **[docs/RANCHER_DOWNSTREAM_MANAGEMENT.md](docs/RANCHER_DOWNSTREAM_MANAGEMENT.md)** - Automatic downstream cluster registration with Rancher Manager
 - **[docs/DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md)** - DNS records required for Rancher and Kubernetes API access
-- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough with single-apply Rancher deployment
 - **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning and VM configuration
 - **[docs/MODULES_AND_AUTOMATION.md](docs/MODULES_AND_AUTOMATION.md)** - Terraform modules, variables, and automation details
-- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions (includes RBD permission errors)
+- **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## Project Structure
 
 ```
 .
-├── apply.sh                      # Deploy with automatic logging (ROOT)
+├── scripts/                      # Helper scripts
+│   ├── apply.sh                  # Deploy with automatic logging
+│   ├── destroy.sh                # Destroy infrastructure
+│   ├── create-rancher-api-token.sh # Create API token manually
+│   └── test-rancher-api-token.sh # Test API connectivity
 ├── README.md                     # This file
-├── CHANGELOG.md                  # Version history and major changes
+├── CHANGELOG.md                  # Version history
 ├── CODE_OF_CONDUCT.md            # Community guidelines
 ├── CONTRIBUTING.md               # Development guidelines
 ├── docs/                         # Core documentation
-│   ├── DNS_CONFIGURATION.md      # DNS records for Rancher and Kubernetes API
 │   ├── DEPLOYMENT_GUIDE.md       # Complete deployment walkthrough
+│   ├── RANCHER_API_TOKEN_CREATION.md # API token creation
+│   ├── RANCHER_DOWNSTREAM_MANAGEMENT.md # Downstream registration
+│   ├── DNS_CONFIGURATION.md      # DNS setup
 │   ├── CLOUD_IMAGE_SETUP.md      # Cloud image provisioning
-│   ├── MODULES_AND_AUTOMATION.md # Terraform modules and variables
+│   ├── MODULES_AND_AUTOMATION.md # Terraform modules
 │   └── TROUBLESHOOTING.md        # Issue resolution
 └── terraform/                    # Terraform configuration
-    ├── main.tf                   # Manager and apps cluster definitions
-    ├── provider.tf               # bpg/proxmox provider config
-    ├── variables.tf              # Variable definitions
-    ├── outputs.tf                # Output values
-    ├── terraform.tfvars          # Environment config (not in git)
+    ├── main.tf                   # Cluster definitions
+    ├── provider.tf               # Provider configuration
+    ├── variables.tf              # Variables
+    ├── outputs.tf                # Outputs
     ├── terraform.tfvars.example  # Config template
-    ├── fetch-token.sh            # RKE2 token fetching script
+    ├── fetch-token.sh            # RKE2 token helper
     └── modules/
-        ├── proxmox_vm/           # VM creation and RKE2 provisioning
-        ├── rke2_manager_cluster/ # Manager cluster verification
-        └── rke2_downstream_cluster/ # Apps cluster verification
+        ├── proxmox_vm/           # VM creation module
+        ├── rke2_manager_cluster/ # Manager verification
+        └── rke2_downstream_cluster/ # Apps verification
 ```
 
 ## Key Features

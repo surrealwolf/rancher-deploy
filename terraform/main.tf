@@ -228,10 +228,20 @@ module "nprd_apps_primary" {
   rke2_server_token  = ""
   rke2_server_ip     = ""
 
+  # Downstream Rancher registration (only for apps cluster, not manager)
+  register_with_rancher         = var.register_downstream_cluster
+  rancher_hostname              = var.rancher_hostname
+  rancher_ingress_ip            = split("/", module.rancher_manager_primary.ip_address)[0]
+  # Auto-use tokens from rancher2_cluster resource if available, otherwise use variable values
+  rancher_registration_token    = local.nprd_registration_token
+  rancher_ca_checksum           = local.nprd_ca_checksum
+
   # CRITICAL: Only build after manager cluster is fully ready
   depends_on = [
     module.rke2_manager,
-    proxmox_virtual_environment_download_file.ubuntu_cloud_image
+    proxmox_virtual_environment_download_file.ubuntu_cloud_image,
+    # Optional: depend on rancher2_cluster if Rancher registration enabled
+    rancher2_cluster.nprd_apps
   ]
 }
 
@@ -281,6 +291,13 @@ module "nprd_apps_additional" {
   rke2_server_token  = trimspace(data.local_file.apps_token.content)  # Token fetched locally from apps primary
   rke2_server_ip     = local.apps_primary_ip
 
+  # Downstream Rancher registration (for secondary nodes)
+  register_with_rancher         = var.register_downstream_cluster
+  rancher_hostname              = var.rancher_hostname
+  rancher_ingress_ip            = split("/", module.rancher_manager_primary.ip_address)[0]
+  rancher_registration_token    = var.rancher_registration_token
+  rancher_ca_checksum           = var.rancher_ca_checksum
+
   depends_on = [
     module.nprd_apps_primary,
     data.local_file.apps_token
@@ -308,6 +325,36 @@ module "rancher_deployment" {
   depends_on = [
     module.rke2_manager
   ]
+}
+
+# ============================================================================
+# DOWNSTREAM CLUSTER RESOURCE IN RANCHER
+# Creates the cluster object in Rancher and gets registration token automatically
+# No manual Rancher UI steps required!
+# ============================================================================
+
+resource "rancher2_cluster" "nprd_apps" {
+  count = var.register_downstream_cluster ? 1 : 0
+  
+  name                   = "nprd-apps"
+  description            = "Non-production applications cluster"
+  enable_cluster_monitoring = true
+  
+  # Force re-creation if token expires
+  lifecycle {
+    ignore_changes = []
+  }
+
+  depends_on = [
+    module.rancher_deployment
+  ]
+}
+
+# Extract the registration token automatically
+locals {
+  nprd_registration_enabled = var.register_downstream_cluster && length(rancher2_cluster.nprd_apps) > 0
+  nprd_registration_token   = local.nprd_registration_enabled ? rancher2_cluster.nprd_apps[0].cluster_registration_token[0].token : var.rancher_registration_token
+  nprd_ca_checksum          = var.rancher_ca_checksum  # Use variable value (computed by VMs if needed)
 }
 
 # ============================================================================

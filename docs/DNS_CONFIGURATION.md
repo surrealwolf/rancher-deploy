@@ -229,8 +229,65 @@ The deployment uses:
 
 All DNS records reference the static IPs configured via cloud-init during VM provisioning.
 
+## kubectl Tools for Multi-Cluster Management
+
+After DNS is configured and clusters are deployed, you can improve your kubectl experience with optional tools:
+
+### kubectx - Cluster Context Switching
+
+`kubectx` allows you to easily switch between multiple Kubernetes clusters, similar to how `cd` works for directories:
+
+```bash
+# Install using make target
+make install-kubectl-tools
+
+# List all cluster contexts
+kubectx
+
+# Switch to manager cluster
+kubectx rancher-manager
+
+# Switch to apps cluster
+kubectx nprd-apps
+
+# Switch back to previous cluster
+kubectx -
+```
+
+### kubens - Namespace Switching
+
+`kubens` helps you switch between namespaces within a cluster:
+
+```bash
+# List namespaces
+kubens
+
+# Switch to kube-system namespace
+kubens kube-system
+
+# Switch to cattle-system (Rancher namespace)
+kubens cattle-system
+
+# Switch back to previous namespace
+kubens -
+```
+
+### Installation
+
+```bash
+# Method 1: Using Makefile (recommended)
+make install-kubectl-tools
+
+# Method 2: Manual installation
+git clone https://github.com/ahmetb/kubectx /opt/kubectx
+sudo ln -s /opt/kubectx/kubectx /usr/local/bin/kubectx
+sudo ln -s /opt/kubectx/kubens /usr/local/bin/kubens
+```
+
+These tools significantly improve developer experience when managing multiple Kubernetes clusters.
+
 ## Related Documentation
 
-- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Kubernetes & Rancher deployment
+- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Kubernetes & Rancher deployment with kubectl tools setup
 - [TERRAFORM_VARIABLES.md](TERRAFORM_VARIABLES.md) - Configuration variables
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Deployment troubleshooting

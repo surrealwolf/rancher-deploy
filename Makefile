@@ -1,4 +1,4 @@
-.PHONY: help init plan apply destroy destroy-quick validate fmt clean check-prereqs check-rancher-tools
+.PHONY: help init plan apply destroy destroy-quick validate fmt clean check-prereqs check-rancher-tools install-kubectl-tools
 
 # Terraform directory
 TF_DIR := terraform
@@ -10,6 +10,7 @@ help:
 	@echo "Available targets:"
 	@echo "  check-prereqs        - Check for required tools (terraform, curl, ssh, jq)"
 	@echo "  check-rancher-tools  - Check for Rancher deployment tools (helm, kubectl)"
+	@echo "  install-kubectl-tools - Install optional kubectx and kubens plugins"
 	@echo ""
 	@echo "Terraform Operations:"
 	@echo "  init                 - Initialize Terraform"
@@ -84,7 +85,13 @@ check-rancher-tools:
 	  exit 1; \
 	fi; \
 	echo ""; \
-	echo "✓ All Rancher tools found"
+	echo "✓ All Rancher tools found"; \
+	echo ""; \
+	echo "Optional tools for improved kubectl experience:"; \
+	echo "  • kubectx (switch between clusters): https://github.com/ahmetb/kubectx"; \
+	echo "  • kubens (switch between namespaces): https://github.com/ahmetb/kubectx/tree/master/kubens"; \
+	if command -v kubectx >/dev/null 2>&1; then echo "    ✓ kubectx installed"; else echo "    Install: sudo git clone https://github.com/ahmetb/kubectx /opt/kubectx && sudo ln -s /opt/kubectx/kubectx /usr/local/bin/kubectx"; fi; \
+	if command -v kubens >/dev/null 2>&1; then echo "    ✓ kubens installed"; else echo "    Install: sudo ln -s /opt/kubectx/kubens /usr/local/bin/kubens"; fi
 
 # Terraform targets
 init: check-prereqs
@@ -94,10 +101,10 @@ plan: init
 	@cd $(TF_DIR) && terraform plan -out=tfplan
 
 apply:
-	@./apply.sh
+	@./scripts/apply.sh
 
 destroy:
-	@./destroy.sh
+	@./scripts/destroy.sh
 
 destroy-quick:
 	@echo "⚠️  Quick destroy without confirmation (use with caution!)"
@@ -116,4 +123,34 @@ clean:
 	@cd $(TF_DIR) && rm -rf .terraform .terraform.lock.hcl tfplan terraform.tfstate*
 	@echo "✓ Cleaned"
 
-.DEFAULT_GOAL := help
+install-kubectl-tools:
+	@echo "Installing optional kubectl plugins (kubectx and kubens)..."
+	@echo ""
+	@if [ -d "/opt/kubectx" ]; then \
+	  echo "kubectx already installed at /opt/kubectx"; \
+	else \
+	  echo "Cloning kubectx repository..."; \
+	  sudo git clone https://github.com/ahmetb/kubectx /opt/kubectx; \
+	fi
+	@echo ""
+	@echo "Setting up kubectx command..."
+	@sudo ln -sf /opt/kubectx/kubectx /usr/local/bin/kubectx
+	@echo "✓ kubectx installed"
+	@echo ""
+	@echo "Setting up kubens command..."
+	@sudo ln -sf /opt/kubectx/kubens /usr/local/bin/kubens
+	@echo "✓ kubens installed"
+	@echo ""
+	@echo "Usage:"
+	@echo "  kubectx               - List/switch clusters (like 'cd' for clusters)"
+	@echo "  kubectx <cluster>     - Switch to a cluster"
+	@echo "  kubens                - List/switch namespaces"
+	@echo "  kubens <namespace>    - Switch to a namespace"
+	@echo ""
+	@echo "Examples:"
+	@echo "  kubectx rancher-manager   - Switch to manager cluster"
+	@echo "  kubens kube-system        - Switch to kube-system namespace"
+	@echo "  kubectx -                 - Switch back to previous cluster"
+	@echo ""
+	@echo "✓ Installation complete!"
+

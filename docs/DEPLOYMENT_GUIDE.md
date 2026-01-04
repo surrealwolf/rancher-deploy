@@ -15,18 +15,18 @@ Complete guide for deploying Rancher clusters on Proxmox using Terraform.
 ### 1. Configure Variables
 
 ```bash
-cd /home/lee/git/rancher-deploy/terraform
+cd terraform
 cp terraform.tfvars.example terraform.tfvars
 ```
 
 Edit `terraform.tfvars` with your Proxmox credentials:
 
 ```hcl
-proxmox_api_url          = "https://pve.example.com:8006/api2/json"
-proxmox_api_user         = "root@pam"
+proxmox_api_url          = "https://proxmox.example.com:8006/api2/json"
+proxmox_api_user         = "terraform@pam"
 proxmox_api_token_id     = "terraform-token"
-proxmox_api_token_secret = "your-secret-token"
-proxmox_node             = "pve2"  # Your Proxmox node name
+proxmox_api_token_secret = "your-token-secret"
+proxmox_node             = "pve"  # Your Proxmox node name
 
 # VM configuration
 ssh_private_key = "~/.ssh/id_rsa"
@@ -52,7 +52,7 @@ From the root directory:
 
 ```bash
 # Option 1: Using the provided script (recommended)
-./apply.sh -auto-approve
+./scripts/apply.sh -auto-approve
 
 # This creates log file: terraform/terraform-<timestamp>.log
 
@@ -105,6 +105,47 @@ kubectl get pods -n kube-system
 # Expected output: 3 nodes in Ready state
 ```
 
+### Optional: Install kubectl Context Switching Tools
+
+To easily switch between the manager and apps clusters, install `kubectx` and `kubens`:
+
+```bash
+# Install from project root
+make install-kubectl-tools
+
+# Or manually
+git clone https://github.com/ahmetb/kubectx /opt/kubectx
+sudo ln -s /opt/kubectx/kubectx /usr/local/bin/kubectx
+sudo ln -s /opt/kubectx/kubens /usr/local/bin/kubens
+```
+
+**Usage examples:**
+
+```bash
+# List all cluster contexts
+kubectx
+
+# Switch to manager cluster
+kubectx rancher-manager
+
+# Switch to apps cluster
+kubectx nprd-apps
+
+# Switch back to previous cluster
+kubectx -
+
+# List namespaces
+kubens
+
+# Switch to a namespace
+kubens kube-system
+
+# Switch back to previous namespace
+kubens -
+```
+
+These tools significantly improve the experience when working with multiple Kubernetes clusters, similar to how `cd` works for directories.
+
 ## Advanced Options
 
 ### Enable Debug Logging
@@ -112,11 +153,11 @@ kubectl get pods -n kube-system
 ```bash
 # Maximum verbosity
 export TF_LOG=trace
-./apply.sh -auto-approve
+./scripts/apply.sh -auto-approve
 
 # Save logs to specific file
 export TF_LOG_PATH=my-deployment.log
-./apply.sh -auto-approve
+./scripts/apply.sh -auto-approve
 ```
 
 ### Log Levels
@@ -202,7 +243,8 @@ cloud-init query
 
 **Test connectivity:**
 ```bash
-ping 8.8.8.8           # Test routing
+ping 192.168.1.1       # Test local DNS gateway
+ping 1.1.1.1           # Test fallback DNS
 ping github.com        # Test DNS and external access
 curl https://get.rke2.io | head -5  # Test RKE2 download
 ```
@@ -248,7 +290,7 @@ install_rancher = true  # Rancher installs automatically on first apply
 **To deploy everything in one command:**
 ```bash
 # Already set to true in default tfvars
-./apply.sh -auto-approve
+./scripts/apply.sh -auto-approve
 
 # Total time: ~35-40 minutes (includes VMs + RKE2 + Rancher)
 ```
