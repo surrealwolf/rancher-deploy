@@ -179,7 +179,7 @@ if [ -n "${SERVER_IP}" ] && [ "${SERVER_IP}" != "" ]; then
   # Create config file for secondary node BEFORE running installer
   # RKE2 reads this automatically and joins primary's etcd cluster
   mkdir -p /etc/rancher/rke2
-  cat > /etc/rancher/rke2/config.yaml <<'EOF'
+  cat > /etc/rancher/rke2/config.yaml <<EOF
 # Secondary RKE2 server - join primary cluster via shared etcd
 server: https://SERVER_IP_PLACEHOLDER:9345
 token: SERVER_TOKEN_PLACEHOLDER
@@ -203,7 +203,7 @@ else
   log "Starting new RKE2 server (primary node)"
   # Create config file for primary node
   mkdir -p /etc/rancher/rke2
-  cat > /etc/rancher/rke2/config.yaml <<'EOF'
+  cat > /etc/rancher/rke2/config.yaml <<EOF
 # Primary RKE2 server with HA etcd clustering
 tls-san:
   - ${CLUSTER_HOSTNAME}
