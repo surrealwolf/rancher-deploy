@@ -7,6 +7,7 @@ Complete guide for deploying Rancher clusters on Proxmox using Terraform.
 - **Proxmox VE 8.0+** with API token access
 - **Terraform 1.5+** installed
 - **SSH key** for VM authentication (`~/.ssh/id_rsa` recommended)
+- **Shell environment**: `bash` or `zsh` (recommended; if using Fish shell, switch to `zsh` for better compatibility with automation scripts and AI tools)
 - **Network access** to Proxmox API and GitHub (for RKE2 downloads)
 - **Available resources**: 24 vCPU cores, 48GB RAM, 600GB disk space
 

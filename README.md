@@ -29,6 +29,7 @@ Deploy a complete Rancher management cluster and non-production apps cluster on 
 - **Terraform**: v1.5 or later
 - **SSH Key**: For authentication (optional, password auth supported)
 - **Available Resources**: 24 vCPU cores, 48GB RAM, 600GB disk space
+- **Shell**: `bash` or `zsh` (recommended for AI assistant compatibility; if using Fish shell, consider switching to `zsh` for better interoperability with automation tools and AI-assisted development)
 
 ## Quick Start
 

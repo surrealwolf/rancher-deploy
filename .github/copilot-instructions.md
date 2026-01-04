@@ -10,6 +10,17 @@ This project deploys a complete Rancher management cluster and non-production ap
 - **Provider**: bpg/proxmox v0.90.0 (reliable, well-maintained)
 - **Kubernetes**: RKE2 v1.34.3+rke2r1 (specific stable version - NOT "latest")
 
+## Development Environment
+
+### Recommended Shell Environment
+- **Supported**: `bash` or `zsh` (both fully compatible with all scripts and automation)
+- **Not recommended**: Fish shell
+  - If you're using Fish shell, **consider switching to `zsh`** for better compatibility
+  - Reason: Our scripts and automation tools are optimized for bash/zsh syntax
+  - Zsh provides excellent compatibility with bash scripts while adding modern features
+  - AI assistants work more effectively with bash/zsh based automation
+  - To switch: `chsh -s /bin/zsh`
+
 ## Latest Updates (Jan 3, 2026)
 
 ### Critical Fixes & Key Lessons
