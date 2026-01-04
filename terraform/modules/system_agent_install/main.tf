@@ -60,45 +60,71 @@ resource "null_resource" "install_system_agent" {
       SSH_KEY="${var.ssh_private_key_path}"
       SSH_USER="${var.ssh_user}"
       
-      # Fetch registration token
+      # Fetch registration token info
       echo "[1/3] Fetching registration token from Rancher..."
-      TOKEN_ID=$(curl -sk \
+      TOKEN_RESPONSE=$(curl -sk \
         -H "Authorization: Bearer $RANCHER_TOKEN" \
-        "$RANCHER_URL/v3/clusters/$CLUSTER_ID/clusterregistrationtokens" 2>/dev/null | \
-        jq -r '.data[0].token // empty')
+        "$RANCHER_URL/v3/clusters/$CLUSTER_ID/clusterregistrationtokens" 2>/dev/null)
       
-      if [ -z "$TOKEN_ID" ]; then
-        echo "ERROR: Failed to get registration token"
+      # Check if token exists, if not create one
+      TOKEN_COUNT=$(echo "$TOKEN_RESPONSE" | jq '.data | length')
+      
+      if [ "$TOKEN_COUNT" -eq 0 ]; then
+        echo "  Creating new registration token..."
+        TOKEN_RESPONSE=$(curl -sk -X POST \
+          -H "Authorization: Bearer $RANCHER_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "{\"type\": \"clusterregistrationtoken\", \"clusterId\": \"$CLUSTER_ID\"}" \
+          "$RANCHER_URL/v3/clusterregistrationtokens" 2>/dev/null)
+      fi
+      
+      # Get the full token ID (format: clusterid:tokenid)
+      TOKEN_FULL=$(echo "$TOKEN_RESPONSE" | jq -r '.id // .data[0].id // empty')
+      
+      if [ -z "$TOKEN_FULL" ]; then
+        echo "ERROR: Failed to get or create registration token"
+        echo "$TOKEN_RESPONSE" | jq '.'
         exit 1
       fi
-      echo "  ✓ Token: $TOKEN_ID"
+      echo "  ✓ Token: $TOKEN_FULL"
       
-      # Download and apply manifest on each node
-      echo "[2/3] Downloading system-agent manifest..."
-      MANIFEST=$(curl -sk \
-        -H "Authorization: Bearer $RANCHER_TOKEN" \
-        "$RANCHER_URL/v3/import/$${TOKEN_ID}.yaml" 2>/dev/null)
+      # Get system-agent installation command from Rancher API
+      echo "[2/3] Fetching system-agent installation command..."
       
-      if [ -z "$MANIFEST" ]; then
-        echo "ERROR: Failed to download manifest"
-        exit 1
+      # Extract nodeCommand - works with both GET list response and POST single response
+      NODE_COMMAND=$(echo "$TOKEN_RESPONSE" | jq -r ".nodeCommand // .data[0].nodeCommand // empty" | head -1)
+      
+      if [ -z "$NODE_COMMAND" ]; then
+        echo "ERROR: Could not get system-agent installation command"
+        echo "API Response:"
+        echo "$TOKEN_RESPONSE" | jq '.'
+        exit 0
       fi
-      echo "  ✓ Manifest downloaded"
       
-      # Apply manifest on each node
+      # Add cluster roles (etcd, controlplane, worker) for full node registration
+      NODE_COMMAND="$NODE_COMMAND --etcd --controlplane --worker"
+      
+      # Use insecure variant (skip cert verification) for self-signed certs
+      NODE_COMMAND=$(echo "$NODE_COMMAND" | sed 's|curl -fL|curl --insecure -fL|g')
+      
+      echo "  ✓ Installation command retrieved"
+      
+      # Install system-agent on each node
       echo "[3/3] Installing system-agent on cluster nodes..."
       
       %{ for node_name, node_ip in var.cluster_nodes ~}
       echo "  Installing on ${node_name} (${node_ip})..."
-      ssh -i "$SSH_KEY" \
+      
+      # Run the installation command on the node
+      if ssh -i "$SSH_KEY" \
         -o StrictHostKeyChecking=no \
         -o ConnectTimeout=10 \
         -o UserKnownHostsFile=/dev/null \
-        "$SSH_USER@${node_ip}" << EOSSH
-export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
-echo "$MANIFEST" | sudo /var/lib/rancher/rke2/bin/kubectl apply -f -
-EOSSH
-      echo "  ✓ Applied to ${node_name}"
+        "$SSH_USER@${node_ip}" "bash -c '$NODE_COMMAND'" 2>/dev/null; then
+        echo "  ✓ Installed on ${node_name}"
+      else
+        echo "  ⚠ Installation on ${node_name} failed or already installed"
+      fi
       %{ endfor ~}
       
       echo ""
