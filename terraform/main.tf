@@ -48,6 +48,9 @@ module "rancher_manager_primary" {
   rke2_is_primary    = true  # NEW: marks this as primary node
   rke2_server_token  = ""    # Primary generates its own token
   rke2_server_ip     = ""    # No upstream server for primary
+  cluster_hostname   = var.manager_cluster_hostname
+  cluster_primary_ip = var.manager_cluster_primary_ip
+  cluster_aliases    = var.manager_cluster_aliases
 
   depends_on = [
     proxmox_virtual_environment_download_file.ubuntu_cloud_image
@@ -136,6 +139,9 @@ module "rancher_manager_additional" {
   rke2_is_primary    = false  # NEW: marks this as secondary node
   rke2_server_token  = try(trimspace(data.local_file.manager_token[0].content), "")  # Token fetched locally from primary
   rke2_server_ip     = local.manager_primary_ip  # Primary IP
+  cluster_hostname   = var.manager_cluster_hostname
+  cluster_primary_ip = var.manager_cluster_primary_ip
+  cluster_aliases    = var.manager_cluster_aliases
 
   # CRITICAL: Only build after primary is ready AND token is fetched
   depends_on = [
@@ -229,6 +235,9 @@ module "nprd_apps_primary" {
   is_rke2_server     = true
   rke2_is_primary    = true
   rke2_server_token  = ""
+  cluster_hostname   = var.apps_cluster_hostname
+  cluster_primary_ip = var.apps_cluster_primary_ip
+  cluster_aliases    = var.apps_cluster_aliases
   rke2_server_ip     = ""
 
   # CRITICAL: Only build after manager cluster is fully ready
@@ -283,6 +292,9 @@ module "nprd_apps_additional" {
   rke2_is_primary    = false
   rke2_server_token  = try(trimspace(data.local_file.nprd_apps_token[0].content), "")  # Token fetched locally from nprd-apps primary
   rke2_server_ip     = local.nprd_apps_primary_ip
+  cluster_hostname   = var.apps_cluster_hostname
+  cluster_primary_ip = var.apps_cluster_primary_ip
+  cluster_aliases    = var.apps_cluster_aliases
 
   depends_on = [
     module.nprd_apps_primary,

@@ -113,3 +113,39 @@ variable "register_downstream_cluster" {
   type        = bool
   default     = true
 }
+
+variable "manager_cluster_hostname" {
+  description = "Hostname for manager cluster TLS SANs (used in RKE2 certificate generation)"
+  type        = string
+  default     = "manager.example.com"
+}
+
+variable "manager_cluster_primary_ip" {
+  description = "Primary IP for manager cluster TLS SANs"
+  type        = string
+  default     = "192.168.1.100"
+}
+
+variable "apps_cluster_hostname" {
+  description = "Hostname for apps cluster TLS SANs (used in RKE2 certificate generation)"
+  type        = string
+  default     = "nprd-apps.example.com"
+}
+
+variable "apps_cluster_primary_ip" {
+  description = "Primary IP for apps cluster TLS SANs"
+  type        = string
+  default     = "192.168.1.110"
+}
+
+variable "manager_cluster_aliases" {
+  description = "Additional hostname aliases for manager cluster TLS SANs (e.g., rancher.example.com)"
+  type        = list(string)
+  default     = []
+}
+
+variable "apps_cluster_aliases" {
+  description = "Additional hostname aliases for apps cluster TLS SANs"
+  type        = list(string)
+  default     = []
+}

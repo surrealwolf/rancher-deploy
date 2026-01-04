@@ -123,6 +123,24 @@ variable "rke2_is_primary" {
   default     = false
 }
 
+variable "cluster_hostname" {
+  description = "Cluster hostname for tls-san (e.g., manager.example.com or nprd-apps.example.com)"
+  type        = string
+  default     = "manager.example.com"
+}
+
+variable "cluster_primary_ip" {
+  description = "Primary node IP for tls-san (e.g., 192.168.1.100 for manager or 192.168.14.110 for apps)"
+  type        = string
+  default     = "192.168.1.100"
+}
+
+variable "cluster_aliases" {
+  description = "Additional hostname aliases for cluster tls-san (e.g., rancher.example.com)"
+  type        = list(string)
+  default     = []
+}
+
 variable "register_with_rancher" {
   description = "Whether to register this RKE2 cluster with Rancher Manager"
   type        = bool
@@ -235,7 +253,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
         # RKE2 installation
         "cat > /tmp/rke2-install.sh <<'RKEEOF'\n${file("${path.module}/cloud-init-rke2.sh")}\nRKEEOF",
         "chmod +x /tmp/rke2-install.sh",
-        "IS_RKE2_SERVER=${var.is_rke2_server} RKE2_VERSION=${var.rke2_version} SERVER_IP=${var.rke2_server_ip} SERVER_TOKEN=${var.rke2_server_token} sudo -E bash /tmp/rke2-install.sh"
+        "IS_RKE2_SERVER=${var.is_rke2_server} RKE2_VERSION=${var.rke2_version} SERVER_IP=${var.rke2_server_ip} SERVER_TOKEN=${var.rke2_server_token} CLUSTER_HOSTNAME=${var.cluster_hostname} CLUSTER_PRIMARY_IP=${var.cluster_primary_ip} CLUSTER_ALIASES='${join(",", var.cluster_aliases)}' sudo -E bash /tmp/rke2-install.sh"
       ],
       # Add Rancher registration if this is a server node and registration is enabled
       var.register_with_rancher && var.is_rke2_server ? [

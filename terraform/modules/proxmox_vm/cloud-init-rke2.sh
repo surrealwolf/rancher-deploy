@@ -184,9 +184,16 @@ if [ -n "${SERVER_IP}" ] && [ "${SERVER_IP}" != "" ]; then
 server: https://SERVER_IP_PLACEHOLDER:9345
 token: SERVER_TOKEN_PLACEHOLDER
 tls-san:
-  - rancher.dataknife.net
-  - SERVER_IP_PLACEHOLDER
+  - ${CLUSTER_HOSTNAME}
+  - ${CLUSTER_PRIMARY_IP}
 EOF
+  # Add aliases if provided
+  if [ -n "${CLUSTER_ALIASES}" ] && [ "${CLUSTER_ALIASES}" != "" ]; then
+    IFS=',' read -ra ALIASES_ARRAY <<< "${CLUSTER_ALIASES}"
+    for ALIAS in "${ALIASES_ARRAY[@]}"; do
+      echo "  - $ALIAS" >> /etc/rancher/rke2/config.yaml
+    done
+  fi
   # Replace placeholders with actual values
   sed -i "s|SERVER_IP_PLACEHOLDER|${SERVER_IP}|g" /etc/rancher/rke2/config.yaml
   sed -i "s|SERVER_TOKEN_PLACEHOLDER|${SERVER_TOKEN}|g" /etc/rancher/rke2/config.yaml
@@ -199,9 +206,16 @@ else
   cat > /etc/rancher/rke2/config.yaml <<'EOF'
 # Primary RKE2 server with HA etcd clustering
 tls-san:
-  - rancher.dataknife.net
-  - 192.168.1.100
+  - ${CLUSTER_HOSTNAME}
+  - ${CLUSTER_PRIMARY_IP}
 EOF
+  # Add aliases if provided
+  if [ -n "${CLUSTER_ALIASES}" ] && [ "${CLUSTER_ALIASES}" != "" ]; then
+    IFS=',' read -ra ALIASES_ARRAY <<< "${CLUSTER_ALIASES}"
+    for ALIAS in "${ALIASES_ARRAY[@]}"; do
+      echo "  - $ALIAS" >> /etc/rancher/rke2/config.yaml
+    done
+  fi
   log "✓ RKE2 primary config created at /etc/rancher/rke2/config.yaml"
 fi
 
