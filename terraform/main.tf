@@ -415,8 +415,57 @@ module "rke2_apps" {
 }
 
 # ============================================================================
+# CREATE DOWNSTREAM CLUSTER OBJECT IN RANCHER
+# Creates the cluster in Rancher to generate the cluster ID
+# ============================================================================
+
+resource "null_resource" "create_downstream_cluster" {
+  count = var.register_downstream_cluster ? 1 : 0
+  
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      
+      echo "[$(date +'%Y-%m-%d %H:%M:%S')] Creating downstream cluster object in Rancher..."
+      
+      # Read API token from file
+      API_TOKEN=$(cat "${path.root}/../config/.rancher-api-token")
+      
+      if [ -z "$${API_TOKEN}" ]; then
+        echo "ERROR: API token file not found at ${path.root}/../config/.rancher-api-token"
+        exit 1
+      fi
+      
+      # Check if cluster already exists
+      EXISTING=$(curl -sk \
+        -H "Authorization: Bearer $${API_TOKEN}" \
+        "https://${var.rancher_hostname}/v3/clusters" \
+        | grep -o '"name":"nprd-apps"' || echo "")
+      
+      if [ -n "$${EXISTING}" ]; then
+        echo "  ✓ Cluster 'nprd-apps' already exists in Rancher"
+      else
+        echo "  Creating cluster 'nprd-apps'..."
+        curl -sk \
+          -X POST \
+          -H "Authorization: Bearer $${API_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d '{"name":"nprd-apps","description":"Non-production applications cluster"}' \
+          "https://${var.rancher_hostname}/v3/clusters" > /dev/null
+        echo "  ✓ Cluster created successfully"
+      fi
+    EOT
+  }
+
+  depends_on = [
+    module.rancher_deployment,
+    null_resource.fetch_manager_token
+  ]
+}
+
+# ============================================================================
 # FETCH DOWNSTREAM CLUSTER ID FROM RANCHER API
-# Automatically extracts cluster ID after cluster is created in Rancher
+# Extracts the cluster ID after cluster object is created
 # ============================================================================
 
 locals {
@@ -426,8 +475,6 @@ locals {
 resource "null_resource" "fetch_downstream_cluster_id" {
   count = var.register_downstream_cluster ? 1 : 0
   
-  # This provisioner will call the Rancher API to find the cluster ID
-  # The cluster should have been created earlier in the deployment flow
   provisioner "local-exec" {
     command = <<-EOT
       set -e
@@ -442,15 +489,15 @@ resource "null_resource" "fetch_downstream_cluster_id" {
         exit 1
       fi
       
-      # Query Rancher API for clusters - look for the downstream cluster by name
+      # Query Rancher API for the nprd-apps cluster specifically
       CLUSTER_ID=$(curl -sk \
         -H "Authorization: Bearer $${API_TOKEN}" \
         "https://${var.rancher_hostname}/v3/clusters" \
-        | grep -o '"id":"[^"]*' | grep -o '[^:]*$' | sed 's/"//g' | head -2 | tail -1 || echo "")
+        | grep -B 5 '"name":"nprd-apps"' | grep -o '"id":"[^"]*' | tail -1 | grep -o '[^:]*$' | sed 's/"//g' || echo "")
       
       if [ -z "$${CLUSTER_ID}" ]; then
         echo "ERROR: Could not fetch downstream cluster ID from Rancher API"
-        echo "Ensure cluster exists in Rancher Manager and API token is valid"
+        echo "Ensure cluster 'nprd-apps' exists in Rancher Manager and API token is valid"
         exit 1
       fi
       
@@ -466,8 +513,7 @@ resource "null_resource" "fetch_downstream_cluster_id" {
   }
 
   depends_on = [
-    module.rancher_deployment,
-    null_resource.fetch_manager_token
+    null_resource.create_downstream_cluster
   ]
 }
 

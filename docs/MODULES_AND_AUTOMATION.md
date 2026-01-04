@@ -121,7 +121,74 @@ terraform apply
 **Total Time: 30-50 minutes (fully automated, no manual steps)**
 ```
 
-## Cluster ID Extraction (NEW - Jan 4, 2026)
+## Cluster Creation & ID Extraction (NEW - Jan 4, 2026)
+
+### Workflow
+
+**Sequence:**
+1. **Create cluster object** in Rancher via API: `POST /v3/clusters`
+2. Rancher generates the cluster ID (e.g., `c-7c2vb`)
+3. **Extract cluster ID** via API: `GET /v3/clusters`
+4. **Register downstream nodes** using the ID
+
+This solves the circular dependency: to register nodes, we need the cluster ID, which is only generated when Rancher creates the cluster object.
+
+### Terraform Implementation
+
+**Step 1: Create cluster object**
+```hcl
+resource "null_resource" "create_downstream_cluster" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      API_TOKEN=$(cat ~/.kube/.rancher-api-token)
+      
+      # Create cluster object - Rancher generates the ID
+      curl -sk -X POST \
+        -H "Authorization: Bearer ${API_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{"name":"nprd-apps","description":"Non-production applications cluster"}' \
+        "https://rancher.example.com/v3/clusters"
+    EOT
+  }
+}
+```
+
+**Step 2: Extract cluster ID**
+```hcl
+resource "null_resource" "fetch_downstream_cluster_id" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      API_TOKEN=$(cat ~/.kube/.rancher-api-token)
+      
+      # Get cluster ID from response
+      CLUSTER_ID=$(curl -sk \
+        -H "Authorization: Bearer ${API_TOKEN}" \
+        "https://rancher.example.com/v3/clusters" \
+        | grep -B 5 '"name":"nprd-apps"' | grep -o '"id":"[^"]*' | tail -1)
+      
+      echo "${CLUSTER_ID}" > ~/.kube/.downstream-cluster-id
+    EOT
+  }
+  depends_on = [null_resource.create_downstream_cluster]
+}
+```
+
+**Step 3: Register cluster using extracted ID**
+```hcl
+module "rancher_downstream_registration" {
+  cluster_id = trimspace(data.local_file.downstream_cluster_id[0].content)
+}
+```
+
+### API Endpoints
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/v3/clusters` | Create cluster object |
+| GET | `/v3/clusters` | List all clusters (get IDs) |
+| GET | `/v3/import/{token}_{cluster-id}.yaml` | Get registration manifest |
+
+## Cluster ID Extraction (DEPRECATED)
 
 ### Problem Solved
 
@@ -254,14 +321,17 @@ module "rke2_manager" { ... }
 # 3. Deploy Rancher (creates API token)
 module "rancher_deployment" { ... }
 
-# 4. Extract Downstream Cluster ID (AUTOMATIC)
+# 4. Create Downstream Cluster Object in Rancher (AUTOMATIC)
+resource "null_resource" "create_downstream_cluster" { ... }
+
+# 5. Extract Downstream Cluster ID (AUTOMATIC)
 resource "null_resource" "fetch_downstream_cluster_id" { ... }
 data "local_file" "downstream_cluster_id" { ... }
 
-# 5. Register Downstream Cluster (MANIFEST-BASED)
+# 6. Register Downstream Cluster (MANIFEST-BASED)
 module "rancher_downstream_registration" { ... }
 
-# 6. Install RKE2 on Apps Cluster
+# 7. Install RKE2 on Apps Cluster
 module "rke2_apps" { ... }
 ```
 
