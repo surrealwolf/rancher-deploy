@@ -220,6 +220,14 @@ resource "proxmox_virtual_environment_vm" "vm" {
     }
   }
 
+  # Prevent modification of import_from on existing VMs
+  # Once a VM is created from an image, we can't change that import path
+  lifecycle {
+    ignore_changes = [
+      initialization
+    ]
+  }
+
   # Apply RKE2 installation via provisioner if enabled
   provisioner "remote-exec" {
     inline = var.rke2_enabled ? concat(

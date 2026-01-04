@@ -184,11 +184,28 @@ else
     echo "=========================================="
     echo "$API_TOKEN"
     echo ""
-    echo "Token saved. Add to terraform/terraform.tfvars:"
-    echo "  rancher_api_token = \"$API_TOKEN\""
+    
+    # Save token to file for downstream cluster registration
+    TOKEN_FILE="$(dirname "$KUBECONFIG")/.rancher-api-token"
+    echo "$API_TOKEN" > "$TOKEN_FILE"
+    chmod 600 "$TOKEN_FILE"
+    echo "✓ Token saved to: $TOKEN_FILE"
+    echo ""
+    echo "Token will be used by Terraform for native downstream cluster registration"
     echo ""
   fi
 fi
+
+echo "=========================================="
+echo "✓ Rancher Manager Deployment Complete!"
+echo "=========================================="
+echo ""
+echo "Rancher URL: https://$RANCHER_HOSTNAME"
+echo "Admin Username: admin"
+echo "Admin Password: $RANCHER_PASSWORD"
+echo ""
+echo "IMPORTANT: Change admin password immediately after first login!"
+echo ""
 
 # Merge kubeconfig to default kubeconfig
 echo "Merging kubeconfig to ~/.kube/config..."

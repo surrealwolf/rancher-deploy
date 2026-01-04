@@ -77,10 +77,10 @@ output "downstream_cluster_registration" {
   value = var.register_downstream_cluster ? {
     enabled                = true
     cluster_name          = "nprd-apps"
-    status                = try(rancher2_cluster.nprd_apps[0].id, "pending_creation")
+    status                = "ready_for_manual_registration"
     rancher_manager_url   = "https://${var.rancher_hostname}"
-    registration_token   = try(rancher2_cluster.nprd_apps[0].cluster_registration_token[0].token, "N/A")
-    manual_registration  = "Not needed - automatic via Terraform rancher2 provider"
+    registration_token   = "Use Rancher UI for manual cluster import"
+    manual_registration  = "Required: Access Rancher UI → Clusters → Import Existing → Generic"
   } : {
     enabled = false
     status  = "Disabled in terraform.tfvars (register_downstream_cluster = false)"

@@ -31,9 +31,13 @@ provider "proxmox" {
 
 # Rancher2 Provider - for downstream cluster management (Optional)
 # Only used if register_downstream_cluster = true
-# Requires rancher_api_token to be set in terraform.tfvars
+# Uses API token created automatically by deploy-rancher.sh script
 provider "rancher2" {
   api_url   = "https://${var.rancher_hostname}"
-  token_key = var.rancher_api_token != "" ? var.rancher_api_token : "placeholder-will-not-be-used"
+  token_key = var.register_downstream_cluster ? (
+    try(trimspace(file(pathexpand("~/.kube/.rancher-api-token"))), "") != "" ? 
+      trimspace(file(pathexpand("~/.kube/.rancher-api-token"))) : 
+      var.rancher_api_token
+  ) : "placeholder-token-not-used"
   insecure  = true  # For self-signed certificates
 }
