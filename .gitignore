@@ -36,6 +36,10 @@ example.tfvars
 terraform_deploy.log
 logs/
 
+# Generated Configuration (kubeconfigs, tokens)
+config/
+!config/.gitkeep
+
 # RKE2 Tokens (sensitive)
 .manager-token
 .apps-token

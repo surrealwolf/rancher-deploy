@@ -2,15 +2,19 @@
 set -e
 
 # Script to deploy Rancher and cert-manager to a Kubernetes cluster
-# Usage: deploy-rancher.sh <kubeconfig_path> <rancher_version> <rancher_hostname> <rancher_password> <cert_manager_version>
+# Usage: deploy-rancher.sh <kubeconfig_path> <rancher_version> <rancher_hostname> <rancher_password> <cert_manager_version> [config_path]
 
 KUBECONFIG="$1"
 RANCHER_VERSION="$2"
 RANCHER_HOSTNAME="$3"
 RANCHER_PASSWORD="$4"
 CERT_MANAGER_VERSION="$5"
+CONFIG_PATH="${6:-.}"  # Default to current directory if not provided
 
 export KUBECONFIG
+
+# Ensure config directory exists
+mkdir -p "$CONFIG_PATH"
 
 echo "=========================================="
 echo "Deploying Rancher to Kubernetes Cluster"
@@ -81,7 +85,37 @@ echo ""
 # Wait for Rancher to be ready
 echo "Waiting for Rancher deployment..."
 kubectl rollout status deployment/rancher -n cattle-system --timeout=10m
-echo "✓ Rancher is ready"
+echo "✓ Rancher deployment is ready"
+echo ""
+
+# Wait for all Rancher pods to be actually running
+echo "Waiting for all Rancher pods to be in Running state..."
+POD_READY=false
+POD_RETRY=0
+POD_MAX_RETRIES=180
+
+while [ "$POD_READY" = false ] && [ $POD_RETRY -lt $POD_MAX_RETRIES ]; do
+  POD_RETRY=$((POD_RETRY + 1))
+  
+  # Count total Rancher pods and running Rancher pods
+  TOTAL_PODS=$(kubectl get pods -n cattle-system -l app=rancher --no-headers 2>/dev/null | wc -l)
+  RUNNING_PODS=$(kubectl get pods -n cattle-system -l app=rancher --no-headers 2>/dev/null | grep "Running" | wc -l)
+  
+  if [ "$TOTAL_PODS" -gt 0 ] && [ "$TOTAL_PODS" -eq "$RUNNING_PODS" ]; then
+    echo "✓ All Rancher pods are Running ($RUNNING_PODS/$TOTAL_PODS)"
+    POD_READY=true
+  else
+    echo "  Attempt $POD_RETRY/$POD_MAX_RETRIES - Waiting... ($RUNNING_PODS/$TOTAL_PODS pods Running)"
+    sleep 5
+  fi
+done
+
+if [ "$POD_READY" = false ]; then
+  echo "ERROR: Not all Rancher pods are running after $POD_MAX_RETRIES attempts (15 minutes)"
+  echo "Current pod status:"
+  kubectl get pods -n cattle-system -l app=rancher
+  exit 1
+fi
 echo ""
 
 # Display summary
@@ -110,15 +144,16 @@ echo ""
 # Test Rancher URL accessibility
 echo "Testing Rancher URL accessibility..."
 RETRY_COUNT=0
-MAX_RETRIES=30
+MAX_RETRIES=60
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-  if curl -k -s -o /dev/null -w "%{http_code}" "https://$RANCHER_HOSTNAME" | grep -q "200"; then
-    echo "✓ Rancher is accessible at https://$RANCHER_HOSTNAME"
+  HTTP_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" "https://$RANCHER_HOSTNAME" 2>/dev/null)
+  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+    echo "✓ Rancher is accessible at https://$RANCHER_HOSTNAME (HTTP $HTTP_CODE)"
     break
   fi
   RETRY_COUNT=$((RETRY_COUNT + 1))
   if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-    echo "  Attempt $RETRY_COUNT/$MAX_RETRIES - Waiting for Rancher to be ready..."
+    echo "  Attempt $RETRY_COUNT/$MAX_RETRIES - Waiting for Rancher to be ready (HTTP $HTTP_CODE)..."
     sleep 10
   fi
 done
@@ -129,6 +164,53 @@ if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
 fi
 echo ""
 
+# ============================================================================# VERIFY RANCHER API IS ACCESSIBLE
+# ============================================================================
+
+echo "Verifying Rancher API accessibility..."
+API_READY=false
+API_RETRY_COUNT=0
+API_MAX_RETRIES=30
+
+while [ $API_RETRY_COUNT -lt $API_MAX_RETRIES ]; do
+  # Test the auth API endpoint specifically
+  API_RESPONSE=$(curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"username":"test","password":"test"}' \
+    -w "\n%{http_code}" \
+    -k "https://$RANCHER_HOSTNAME/v3-public/localProviders/local?action=login" 2>&1)
+  
+  # Extract HTTP code (last line)
+  HTTP_CODE=$(echo "$API_RESPONSE" | tail -1)
+  
+  # 401 or 422 means API is responding (auth failure is expected with wrong creds)
+  # 200 would also be fine
+  if echo "$HTTP_CODE" | grep -q "^[24][0-9][0-9]$"; then
+    echo "✓ Rancher API is accessible (HTTP $HTTP_CODE)"
+    API_READY=true
+    break
+  fi
+  
+  API_RETRY_COUNT=$((API_RETRY_COUNT + 1))
+  if [ $API_RETRY_COUNT -lt $API_MAX_RETRIES ]; then
+    echo "  Attempt $API_RETRY_COUNT/$API_MAX_RETRIES - Waiting for API to be ready (HTTP $HTTP_CODE)..."
+    sleep 2
+  fi
+done
+
+if [ "$API_READY" = false ]; then
+  echo "WARNING: Rancher API not responding after $API_MAX_RETRIES attempts"
+  echo "Continuing anyway, will retry authentication..."
+fi
+echo ""
+
+# ============================================================================# CREATE RANCHER API TOKEN FOR DOWNSTREAM CLUSTER REGISTRATION
+# ============================================================================
+
+echo "Creating Rancher API token for downstream cluster registration..."
+echo ""
+
+# Step 1: Authenticate with Rancher using admin credentials
 # ============================================================================
 # CREATE RANCHER API TOKEN FOR DOWNSTREAM CLUSTER REGISTRATION
 # ============================================================================
@@ -136,48 +218,78 @@ echo ""
 echo "Creating Rancher API token for downstream cluster registration..."
 echo ""
 
-# Step 1: Authenticate with Rancher using admin credentials
+# Step 1: Authenticate with Rancher using admin credentials (WITH RETRY)
 echo "Step 1: Authenticating with Rancher..."
-LOGIN_RESPONSE=$(curl -s -X POST \
-  -H "Content-Type: application/json" \
-  -d "{\"username\":\"admin\",\"password\":\"$RANCHER_PASSWORD\"}" \
-  -k "https://$RANCHER_HOSTNAME/v3-public/localProviders/local?action=login")
+TEMP_TOKEN=""
+AUTH_MAX_RETRIES=10
+AUTH_RETRY=0
 
-# Extract temporary token
-TEMP_TOKEN=$(echo "$LOGIN_RESPONSE" | grep -o '"token":"[^"]*' | head -1 | cut -d'"' -f4)
+while [ -z "$TEMP_TOKEN" ] && [ $AUTH_RETRY -lt $AUTH_MAX_RETRIES ]; do
+  AUTH_RETRY=$((AUTH_RETRY + 1))
+  
+  LOGIN_RESPONSE=$(curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"admin\",\"password\":\"$RANCHER_PASSWORD\"}" \
+    -k "https://$RANCHER_HOSTNAME/v3-public/localProviders/local?action=login")
+
+  # Extract temporary token
+  TEMP_TOKEN=$(echo "$LOGIN_RESPONSE" | grep -o '"token":"[^"]*' | head -1 | cut -d'"' -f4)
+
+  if [ -z "$TEMP_TOKEN" ]; then
+    echo "  Attempt $AUTH_RETRY/$AUTH_MAX_RETRIES - Rancher auth API not ready, retrying..."
+    if [ $AUTH_RETRY -lt $AUTH_MAX_RETRIES ]; then
+      sleep 5
+    fi
+  fi
+done
 
 if [ -z "$TEMP_TOKEN" ]; then
-  echo "WARNING: Failed to authenticate with Rancher API"
-  echo "  Response: $LOGIN_RESPONSE"
+  echo "WARNING: Failed to authenticate with Rancher API after $AUTH_MAX_RETRIES attempts"
+  echo "  Last response: $LOGIN_RESPONSE"
   echo "  Skipping API token creation - you can create it manually later"
   echo ""
 else
-  echo "✓ Authenticated with Rancher"
+  echo "✓ Authenticated with Rancher on attempt $AUTH_RETRY"
   echo ""
 
-  # Step 2: Create permanent API token
+  # Step 2: Create permanent API token (WITH RETRY)
   echo "Step 2: Creating API token..."
-  TOKEN_RESPONSE=$(curl -s -X POST \
-    -H "Authorization: Bearer $TEMP_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d '{
-      "type": "token",
-      "description": "Terraform automation token for downstream cluster registration",
-      "ttl": 0,
-      "isDerived": false
-    }' \
-    -k "https://$RANCHER_HOSTNAME/v3/tokens")
+  API_TOKEN=""
+  TOKEN_MAX_RETRIES=5
+  TOKEN_RETRY=0
 
-  # Extract the API token
-  API_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"token":"[^"]*' | head -1 | cut -d'"' -f4)
+  while [ -z "$API_TOKEN" ] && [ $TOKEN_RETRY -lt $TOKEN_MAX_RETRIES ]; do
+    TOKEN_RETRY=$((TOKEN_RETRY + 1))
+    
+    TOKEN_RESPONSE=$(curl -s -X POST \
+      -H "Authorization: Bearer $TEMP_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "type": "token",
+        "description": "Terraform automation token for downstream cluster registration",
+        "ttl": 0,
+        "isDerived": false
+      }' \
+      -k "https://$RANCHER_HOSTNAME/v3/tokens")
+
+    # Extract the API token
+    API_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"token":"[^"]*' | head -1 | cut -d'"' -f4)
+
+    if [ -z "$API_TOKEN" ]; then
+      echo "  Attempt $TOKEN_RETRY/$TOKEN_MAX_RETRIES - Token creation not ready, retrying..."
+      if [ $TOKEN_RETRY -lt $TOKEN_MAX_RETRIES ]; then
+        sleep 5
+      fi
+    fi
+  done
 
   if [ -z "$API_TOKEN" ]; then
-    echo "WARNING: Failed to create API token"
-    echo "  Response: $TOKEN_RESPONSE"
+    echo "WARNING: Failed to create API token after $TOKEN_MAX_RETRIES attempts"
+    echo "  Last response: $TOKEN_RESPONSE"
     echo "  You can create the token manually via Rancher UI or script"
     echo ""
   else
-    echo "✓ API token created successfully"
+    echo "✓ API token created successfully on attempt $TOKEN_RETRY"
     echo ""
     echo "=========================================="
     echo "Rancher API Token:"
@@ -186,7 +298,7 @@ else
     echo ""
     
     # Save token to file for downstream cluster registration
-    TOKEN_FILE="$(dirname "$KUBECONFIG")/.rancher-api-token"
+    TOKEN_FILE="$CONFIG_PATH/.rancher-api-token"
     echo "$API_TOKEN" > "$TOKEN_FILE"
     chmod 600 "$TOKEN_FILE"
     echo "✓ Token saved to: $TOKEN_FILE"
@@ -206,25 +318,5 @@ echo "Admin Password: $RANCHER_PASSWORD"
 echo ""
 echo "IMPORTANT: Change admin password immediately after first login!"
 echo ""
-
-# Merge kubeconfig to default kubeconfig
-echo "Merging kubeconfig to ~/.kube/config..."
-if [ -f "$KUBECONFIG" ]; then
-  # Create backup
-  if [ -f ~/.kube/config ]; then
-    cp ~/.kube/config ~/.kube/config.backup
-    echo "  Backup created: ~/.kube/config.backup"
-  fi
-  
-  # Merge kubeconfigs using kubectl
-  KUBECONFIG=~/.kube/config:"$KUBECONFIG" kubectl config view --flatten > ~/.kube/config.tmp
-  mv ~/.kube/config.tmp ~/.kube/config
-  chmod 600 ~/.kube/config
-  echo "✓ Kubeconfig merged to ~/.kube/config"
-  echo "  You can now use: kubectl --context=<cluster-name> get nodes"
-else
-  echo "WARNING: Kubeconfig not found at $KUBECONFIG"
-fi
-echo ""
-
+echo "Note: Kubeconfig merging handled by Terraform merge_kubeconfigs resource"
 echo "=========================================="

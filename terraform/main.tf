@@ -311,6 +311,41 @@ module "rancher_deployment" {
 }
 
 # ============================================================================
+# CLEANUP GENERATED TOKENS AND VALUES ON DESTROY
+# ============================================================================
+
+resource "null_resource" "cleanup_tokens_on_destroy" {
+  count = var.install_rancher ? 1 : 0
+
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command = <<-EOT
+      CONFIG_DIR="${path.root}/../config"
+      echo "Cleaning up generated Rancher tokens and configs..."
+      
+      # Remove Rancher API token
+      if [ -f "$${CONFIG_DIR}/.rancher-api-token" ]; then
+        rm -f "$${CONFIG_DIR}/.rancher-api-token"
+        echo "  ✓ Removed: $${CONFIG_DIR}/.rancher-api-token"
+      fi
+      
+      # Note: Individual kubeconfig files (~/.kube/rancher-manager.yaml, nprd-apps.yaml)
+      # are not removed - they are merged into ~/.kube/config which user may want to keep
+      # To fully reset, manually: rm ~/.kube/rancher-manager.yaml ~/.kube/nprd-apps.yaml
+      
+      echo "✓ Cleanup complete"
+      echo "Note: Kubeconfig entries are merged into ~/.kube/config (not removed)"
+      echo "To reset: rm ~/.kube/rancher-manager.yaml ~/.kube/nprd-apps.yaml"
+    EOT
+  }
+
+  depends_on = [
+    module.rancher_deployment
+  ]
+}
+
+# ============================================================================
 # DOWNSTREAM CLUSTER REGISTRATION - NATIVE RANCHER PROVIDER
 # Uses rancher2_cluster resource with API token created by deploy-rancher.sh
 # ============================================================================
@@ -349,6 +384,61 @@ module "rke2_apps" {
     module.nprd_apps_primary,
     module.nprd_apps_additional,
     module.rancher_deployment  # Wait for Rancher to be deployed first
+  ]
+}
+
+# ============================================================================
+# MERGE ALL KUBECONFIGS TO DEFAULT LOCATION
+# Merges manager and apps cluster kubeconfigs into ~/.kube/config
+# ============================================================================
+
+resource "null_resource" "merge_kubeconfigs" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo "=========================================="
+      echo "Merging all kubeconfigs to ~/.kube/config"
+      echo "=========================================="
+      
+      mkdir -p ~/.kube
+      MANAGER_CONFIG="~/.kube/rancher-manager.yaml"
+      APPS_CONFIG="~/.kube/nprd-apps.yaml"
+      
+      # Merge manager and apps kubeconfigs into default config
+      if [ -f "$${MANAGER_CONFIG}" ] && [ -f "$${APPS_CONFIG}" ]; then
+        echo "Merging manager and apps kubeconfigs..."
+        KUBECONFIG="~/.kube/config:$${MANAGER_CONFIG}:$${APPS_CONFIG}" kubectl config view --flatten > ~/.kube/config.tmp
+        mv ~/.kube/config.tmp ~/.kube/config
+        chmod 600 ~/.kube/config
+        echo "✓ Merged both kubeconfigs to ~/.kube/config"
+      elif [ -f "$${MANAGER_CONFIG}" ]; then
+        echo "Merging manager kubeconfig (apps not yet available)..."
+        KUBECONFIG="~/.kube/config:$${MANAGER_CONFIG}" kubectl config view --flatten > ~/.kube/config.tmp
+        mv ~/.kube/config.tmp ~/.kube/config
+        chmod 600 ~/.kube/config
+        echo "✓ Merged manager kubeconfig to ~/.kube/config"
+      fi
+      
+      # Rename contexts to meaningful names
+      kubectl config rename-context "rancher-manager" "rancher-manager" 2>/dev/null || true
+      kubectl config rename-context "nprd-apps" "nprd-apps" 2>/dev/null || true
+      
+      echo ""
+      echo "Available contexts:"
+      kubectl config get-contexts --no-headers 2>/dev/null | sed 's/^/  /'
+      echo ""
+      echo "To switch clusters:"
+      echo "  kubectl config use-context rancher-manager"
+      echo "  kubectl config use-context nprd-apps"
+      echo ""
+      echo "Or use kubectx (if installed):"
+      echo "  kubectx                    # List contexts"
+      echo "  kubectx rancher-manager    # Switch to manager"
+      echo "  kubectx nprd-apps          # Switch to apps"
+    EOT
+  }
+
+  depends_on = [
+    rancher2_cluster.nprd_apps
   ]
 }
 

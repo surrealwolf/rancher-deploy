@@ -72,7 +72,8 @@ resource "null_resource" "deploy_rancher" {
         "${var.rancher_version}" \
         "${var.rancher_hostname}" \
         "${var.rancher_password}" \
-        "${var.cert_manager_version}"
+        "${var.cert_manager_version}" \
+        "${pathexpand("${path.root}/../config")}"
     EOT
   }
 }
