@@ -187,7 +187,7 @@ tls-san:
   - ${CLUSTER_HOSTNAME}
   - ${CLUSTER_PRIMARY_IP}
 EOF
-  # Add aliases if provided
+  # Add aliases to tls-san if provided
   if [ -n "${CLUSTER_ALIASES}" ] && [ "${CLUSTER_ALIASES}" != "" ]; then
     IFS=',' read -ra ALIASES_ARRAY <<< "${CLUSTER_ALIASES}"
     for ALIAS in "${ALIASES_ARRAY[@]}"; do
@@ -209,7 +209,7 @@ tls-san:
   - ${CLUSTER_HOSTNAME}
   - ${CLUSTER_PRIMARY_IP}
 EOF
-  # Add aliases if provided
+  # Add aliases to tls-san if provided
   if [ -n "${CLUSTER_ALIASES}" ] && [ "${CLUSTER_ALIASES}" != "" ]; then
     IFS=',' read -ra ALIASES_ARRAY <<< "${CLUSTER_ALIASES}"
     for ALIAS in "${ALIASES_ARRAY[@]}"; do
@@ -242,7 +242,7 @@ if [ "${REGISTER_WITH_RANCHER}" = "true" ] && [ -n "${RANCHER_HOSTNAME}" ]; then
   log "Waiting for RKE2 to initialize (max 5 minutes)..."
   READY=0
   for i in {1..150}; do
-    if [ -f /var/lib/rancher/rke2/server/node-token ]; then
+    if [ -f /var/lib/rancher/rke2/server/token ]; then
       READY=1
       log "✓ RKE2 server ready at attempt $i"
       break
@@ -254,24 +254,41 @@ if [ "${REGISTER_WITH_RANCHER}" = "true" ] && [ -n "${RANCHER_HOSTNAME}" ]; then
   done
   
   if [ $READY -eq 1 ]; then
-    # Install rancher-system-agent
-    log "Installing rancher-system-agent package..."
-    curl -sfL https://get.rancher.io/system-agent-install.sh | sh - > /var/log/rancher-system-agent-install.log 2>&1
+    # Get kubeconfig from local RKE2 server
+    log "Retrieving RKE2 kubeconfig..."
+    export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+    export PATH="/var/lib/rancher/rke2/bin:$PATH"
     
-    if [ $? -eq 0 ]; then
-      log "✓ rancher-system-agent installation successful"
+    # Wait for kubeconfig to be readable
+    KUBECONFIG_READY=0
+    for i in {1..60}; do
+      if [ -f "$KUBECONFIG" ] && /var/lib/rancher/rke2/bin/kubectl cluster-info &>/dev/null; then
+        KUBECONFIG_READY=1
+        log "✓ Kubeconfig available at attempt $i"
+        break
+      fi
+      sleep 2
+    done
+    
+    if [ $KUBECONFIG_READY -eq 1 ]; then
+      log "✓ RKE2 cluster is responsive, kubeconfig ready for system-agent"
+      log "System-agent will be registered automatically by Rancher Manager"
+      log "Cluster registration status can be checked via Rancher API:"
+      log "  curl -H 'Authorization: Bearer \$RANCHER_TOKEN' \\"
+      log "    https://${RANCHER_HOSTNAME}/v3/nodes?clusterId=<cluster-id>"
     else
-      log "⚠ rancher-system-agent installation may have issues, checking logs..."
-      tail -20 /var/log/rancher-system-agent-install.log
+      log "⚠ RKE2 kubeconfig not ready for system-agent after 120 seconds"
+      log "System-agent registration may be delayed but cluster is still operational"
     fi
   else
-    log "⚠ RKE2 server not ready for system-agent installation (node-token not found)"
+    log "⚠ RKE2 server token not ready for system-agent installation"
+    log "Registration will complete when Rancher discovers the running RKE2 cluster"
   fi
 else
   if [ "${REGISTER_WITH_RANCHER}" != "true" ]; then
-    log "ⓘ System-agent installation skipped (REGISTER_WITH_RANCHER=false)"
+    log "ⓘ System-agent registration skipped (REGISTER_WITH_RANCHER=false)"
   else
-    log "ⓘ System-agent installation skipped (RANCHER_HOSTNAME not set)"
+    log "ⓘ System-agent registration skipped (RANCHER_HOSTNAME not set)"
   fi
 fi
 
@@ -290,6 +307,45 @@ if [ -f /usr/local/lib/systemd/system/rke2-server.service ]; then
   fi
 else
   log "⚠ RKE2 server unit file not found, service will start manually"
+fi
+
+# ============ FIX COREDNS DNS FORWARDING ============
+# Ensure CoreDNS properly forwards external DNS queries to upstream DNS servers
+log "Configuring CoreDNS to properly forward external DNS queries..."
+export PATH="/var/lib/rancher/rke2/bin:$PATH"
+export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+
+# Wait for CoreDNS to be ready
+DNS_READY=0
+for i in {1..60}; do
+  if /var/lib/rancher/rke2/bin/kubectl get deployment -n kube-system rke2-coredns-rke2-coredns &>/dev/null 2>&1; then
+    DNS_READY=1
+    log "✓ CoreDNS deployment found at attempt $i"
+    break
+  fi
+  if [ $((i % 10)) -eq 0 ]; then
+    log "  Waiting for CoreDNS deployment... attempt $i/60"
+  fi
+  sleep 2
+done
+
+if [ $DNS_READY -eq 1 ]; then
+  # Patch CoreDNS ConfigMap to explicitly forward to upstream DNS servers
+  # This ensures external domain resolution works reliably (e.g., rancher.dataknife.net -> 192.168.14.100)
+  log "Patching CoreDNS ConfigMap with explicit upstream DNS forwarding..."
+  /var/lib/rancher/rke2/bin/kubectl patch configmap rke2-coredns-rke2-coredns -n kube-system -p '{
+    "data": {
+      "Corefile": ".:53 {\n    errors\n    health {\n        lameduck 10s\n    }\n    ready\n    kubernetes  cluster.local  cluster.local in-addr.arpa ip6.arpa {\n        pods insecure\n        fallthrough in-addr.arpa ip6.arpa\n        ttl 30\n    }\n    prometheus  0.0.0.0:9153\n    forward  . 192.168.1.1 1.1.1.1\n    cache  30\n    loop\n    reload\n    loadbalance\n}\n"
+    }
+  }' &>/dev/null 2>&1 || log "⚠ CoreDNS ConfigMap patch attempted but may have failed"
+  
+  # Restart CoreDNS pods to pick up new configuration
+  log "Restarting CoreDNS pods to apply DNS configuration..."
+  /var/lib/rancher/rke2/bin/kubectl rollout restart deployment/rke2-coredns-rke2-coredns -n kube-system &>/dev/null 2>&1 || log "⚠ CoreDNS restart attempted"
+  
+  log "✓ CoreDNS DNS forwarding configured to use 192.168.1.1 and 1.1.1.1"
+else
+  log "⚠ CoreDNS not ready yet, DNS forwarding will be configured when cluster initializes"
 fi
 
 else

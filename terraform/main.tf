@@ -247,9 +247,10 @@ module "nprd_apps_primary" {
   rancher_registration_token   = ""  # Will be obtained from Rancher API
   rancher_ca_checksum          = ""  # Will be obtained from Rancher API
 
-  # CRITICAL: Only build after manager cluster is fully ready
+  # CRITICAL: Only build after manager cluster AND Rancher are fully ready
   depends_on = [
     module.rke2_manager,
+    module.rancher_deployment,
     proxmox_virtual_environment_download_file.ubuntu_cloud_image
   ]
 }
