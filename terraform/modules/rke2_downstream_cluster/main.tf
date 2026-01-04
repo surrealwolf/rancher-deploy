@@ -88,9 +88,17 @@ resource "null_resource" "get_kubeconfig" {
     command = <<-EOT
       echo "Retrieving actual kubeconfig from RKE2 downstream server..."
       mkdir -p ~/.kube
-      ssh -i ${var.ssh_private_key_path} -o StrictHostKeyChecking=no ${var.ssh_user}@${var.agent_ips[0]} 'sudo cat /etc/rancher/rke2/rke2.yaml' | sed 's/127.0.0.1/${var.cluster_hostname}/' > ~/.kube/${var.cluster_name}.yaml
+      # Retrieve kubeconfig and set proper cluster/context names
+      # RKE2 creates "default" for cluster, context, and current-context
+      # We replace them with meaningful names: ${var.cluster_name}
+      ssh -i ${var.ssh_private_key_path} -o StrictHostKeyChecking=no ${var.ssh_user}@${var.agent_ips[0]} 'sudo cat /etc/rancher/rke2/rke2.yaml' | \
+        sed 's/127.0.0.1/${var.cluster_hostname}/' | \
+        sed '/^clusters:/,/^contexts:/ s/^  name: default$/  name: ${var.cluster_name}/' | \
+        sed '/^contexts:/,/^current-context:/ s/^    cluster: default$/    cluster: ${var.cluster_name}/' | \
+        sed '/^contexts:/,/^current-context:/ s/^  name: default$/  name: ${var.cluster_name}/' | \
+        sed 's/^current-context: default$/current-context: ${var.cluster_name}/' > ~/.kube/${var.cluster_name}.yaml
       chmod 600 ~/.kube/${var.cluster_name}.yaml
-      echo "✓ Downstream kubeconfig updated with real credentials"
+      echo "✓ Downstream kubeconfig updated with real credentials and context name"
     EOT
   }
 
@@ -128,6 +136,16 @@ resource "null_resource" "configure_coredns_dns" {
       echo "Node DNS is configured in cloud-init (systemd-resolved disabled, /etc/resolv.conf configured)"
       echo "CoreDNS pods inherit /etc/resolv.conf from the node automatically"
       echo "No post-deployment CoreDNS patching needed"
+      
+      # Verify DNS resolution works from node
+      echo ""
+      echo "Verifying DNS resolution from node..."
+      if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$PRIMARY_IP" \
+        "nslookup rancher.dataknife.net &>/dev/null 2>&1"; then
+        echo "✓ Node DNS resolution working"
+      else
+        echo "⚠ Node DNS resolution check failed"
+      fi
     EOT
   }
 

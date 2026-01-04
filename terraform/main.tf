@@ -626,31 +626,71 @@ resource "null_resource" "merge_kubeconfigs" {
       echo "=========================================="
       
       mkdir -p ~/.kube
-      MANAGER_CONFIG="~/.kube/rancher-manager.yaml"
-      APPS_CONFIG="~/.kube/nprd-apps.yaml"
+      MANAGER_CONFIG="$HOME/.kube/rancher-manager.yaml"
+      APPS_CONFIG="$HOME/.kube/nprd-apps.yaml"
       
       # Merge manager and apps kubeconfigs into default config
       if [ -f "$${MANAGER_CONFIG}" ] && [ -f "$${APPS_CONFIG}" ]; then
         echo "Merging manager and apps kubeconfigs..."
-        KUBECONFIG="~/.kube/config:$${MANAGER_CONFIG}:$${APPS_CONFIG}" kubectl config view --flatten > ~/.kube/config.tmp
-        mv ~/.kube/config.tmp ~/.kube/config
-        chmod 600 ~/.kube/config
-        echo "✓ Merged both kubeconfigs to ~/.kube/config"
+        KUBECONFIG="$HOME/.kube/config:$${MANAGER_CONFIG}:$${APPS_CONFIG}" kubectl config view --flatten > $HOME/.kube/config.tmp
+        mv $HOME/.kube/config.tmp $HOME/.kube/config
+        chmod 600 $HOME/.kube/config
+        echo "✓ Merged both kubeconfigs to $HOME/.kube/config"
       elif [ -f "$${MANAGER_CONFIG}" ]; then
         echo "Merging manager kubeconfig (apps not yet available)..."
-        KUBECONFIG="~/.kube/config:$${MANAGER_CONFIG}" kubectl config view --flatten > ~/.kube/config.tmp
-        mv ~/.kube/config.tmp ~/.kube/config
-        chmod 600 ~/.kube/config
-        echo "✓ Merged manager kubeconfig to ~/.kube/config"
+        KUBECONFIG="$HOME/.kube/config:$${MANAGER_CONFIG}" kubectl config view --flatten > $HOME/.kube/config.tmp
+        mv $HOME/.kube/config.tmp $HOME/.kube/config
+        chmod 600 $HOME/.kube/config
+        echo "✓ Merged manager kubeconfig to $HOME/.kube/config"
+      else
+        echo "⚠ No kubeconfig files found to merge"
+        echo "  Manager config: $${MANAGER_CONFIG} ($([ -f "$${MANAGER_CONFIG}" ] && echo 'exists' || echo 'missing'))"
+        echo "  Apps config: $${APPS_CONFIG} ($([ -f "$${APPS_CONFIG}" ] && echo 'exists' || echo 'missing'))"
       fi
       
-      # Rename contexts to meaningful names
-      kubectl config rename-context "rancher-manager" "rancher-manager" 2>/dev/null || true
-      kubectl config rename-context "nprd-apps" "nprd-apps" 2>/dev/null || true
+      # Verify and set context names correctly after merge
+      # Kubeconfigs should already have correct context names from retrieval step,
+      # but verify and fix if needed
+      
+      # Check if contexts exist with expected names
+      MANAGER_EXISTS=$(kubectl config get-contexts rancher-manager 2>/dev/null | grep -q rancher-manager && echo "yes" || echo "no")
+      APPS_EXISTS=$(kubectl config get-contexts nprd-apps 2>/dev/null | grep -q nprd-apps && echo "yes" || echo "no")
+      
+      # If manager context doesn't exist, find and rename it
+      if [ "$${MANAGER_EXISTS}" = "no" ]; then
+        MANAGER_CONTEXT=$(kubectl config view -o jsonpath='{.contexts[?(@.context.cluster=="rancher-manager")].name}' 2>/dev/null || kubectl config view -o jsonpath='{.contexts[0].name}' 2>/dev/null || echo "")
+        if [ -n "$${MANAGER_CONTEXT}" ] && [ "$${MANAGER_CONTEXT}" != "rancher-manager" ]; then
+          echo "Renaming manager context: $${MANAGER_CONTEXT} -> rancher-manager"
+          kubectl config rename-context "$${MANAGER_CONTEXT}" "rancher-manager" 2>/dev/null || true
+        fi
+      fi
+      
+      # If apps context doesn't exist, find and rename it
+      if [ "$${APPS_EXISTS}" = "no" ] && [ -f "$HOME/.kube/nprd-apps.yaml" ]; then
+        APPS_CONTEXT=$(kubectl config view -o jsonpath='{.contexts[?(@.context.cluster=="nprd-apps")].name}' 2>/dev/null || kubectl config view -o jsonpath='{.contexts[1].name}' 2>/dev/null || echo "")
+        if [ -n "$${APPS_CONTEXT}" ] && [ "$${APPS_CONTEXT}" != "nprd-apps" ] && [ "$${APPS_CONTEXT}" != "rancher-manager" ]; then
+          echo "Renaming apps context: $${APPS_CONTEXT} -> nprd-apps"
+          kubectl config rename-context "$${APPS_CONTEXT}" "nprd-apps" 2>/dev/null || true
+        fi
+      fi
+      
+      # Verify cluster names are set correctly
+      if kubectl config get-clusters rancher-manager &>/dev/null 2>&1; then
+        echo "✓ Manager cluster: rancher-manager"
+      fi
+      if kubectl config get-clusters nprd-apps &>/dev/null 2>&1; then
+        echo "✓ Apps cluster: nprd-apps"
+      fi
+      
+      # Set current context to manager if available
+      if kubectl config get-contexts rancher-manager &>/dev/null 2>&1; then
+        kubectl config use-context rancher-manager 2>/dev/null || true
+        echo "✓ Current context set to: rancher-manager"
+      fi
       
       echo ""
       echo "Available contexts:"
-      kubectl config get-contexts --no-headers 2>/dev/null | sed 's/^/  /'
+      kubectl config get-contexts --no-headers 2>/dev/null | sed 's/^/  /' || echo "  (no contexts found)"
       echo ""
       echo "To switch clusters:"
       echo "  kubectl config use-context rancher-manager"
