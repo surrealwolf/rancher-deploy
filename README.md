@@ -340,3 +340,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history, features, and major change
 ## License
 
 This project is licensed under the MIT License.
+
+---
+
+**Built with Claude Haiku 4.5** - This project was developed using Claude Haiku 4.5, an AI assistant optimized for code generation and infrastructure automation.
