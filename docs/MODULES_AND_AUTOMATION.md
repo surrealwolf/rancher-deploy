@@ -2,67 +2,123 @@
 
 ## Overview
 
-The rancher-deploy project now provides **end-to-end automation** for deploying Rancher on Proxmox using Terraform. This includes:
+The rancher-deploy project provides **end-to-end automation** for deploying Rancher on Proxmox using Terraform. This includes:
 
 1. **VM Provisioning** - bpg/proxmox provider
 2. **RKE2 Installation** - Automated Kubernetes bootstrapping
 3. **Rancher Deployment** - Helm-based installation
+4. **Cluster Registration** - Manifest-based downstream cluster registration (NEW)
 
-## New Modules
+## Modules
 
-### 1. rke2_cluster Module
-**Location:** `terraform/modules/rke2_cluster/main.tf`
+### 1. proxmox_vm Module
+**Location:** `terraform/modules/proxmox_vm/`
 
-Automates RKE2 Kubernetes installation via SSH provisioners:
-- Installs RKE2 on server nodes
-- Joins additional servers in HA mode
-- Retrieves and stores kubeconfig locally
-- Handles token management for cluster joining
+Creates VMs on Proxmox with cloud-init configuration:
+- Automatic OS provisioning from Ubuntu cloud images
+- Network configuration (IP, DNS, hostname)
+- SSH key injection for authentication
+- VLAN tagging and gateway configuration
+
+### 2. rke2_manager_cluster Module
+**Location:** `terraform/modules/rke2_manager_cluster/main.tf`
+
+Installs RKE2 on manager cluster nodes:
+- Configures primary server node (cluster initialization)
+- Joins additional servers in HA mode (via port 9345)
+- Retrieves kubeconfig to ~/.kube/rancher-manager.yaml
+- Validates cluster health before proceeding
 
 **Key Features:**
-- Zero-downtime cluster formation
-- Automatic kubeconfig retrieval
-- Support for multiple server nodes
-- Optional agent nodes
+- Automatic HA token generation
+- Zero-downtime multi-node setup
+- Kubeconfig management
+- Kubernetes API readiness verification
 
-### 2. rancher_cluster Module
+### 3. rancher_cluster Module
 **Location:** `terraform/modules/rancher_cluster/main.tf`
 
-Deploys Rancher via Helm with dependencies:
-- Installs cert-manager (for TLS)
-- Deploys Rancher Helm chart
+Deploys Rancher on manager cluster via Helm:
+- Installs cert-manager for TLS
+- Deploys Rancher via Helm chart
 - Configures bootstrap password
-- Sets up Ingress for HTTPS
-- **Creates and persists API token** for downstream cluster registration
-- **Auto-generates registration credentials** for apps cluster
+- Sets up Ingress for HTTPS access
+- **Creates and persists API token** to ~/.kube/.rancher-api-token
 
 **Key Features:**
-- Kubernetes and Helm providers configured
-- Automatic namespace creation
-- TLS with Let's Encrypt ready
+- Automatic namespace creation (cattle-system)
+- TLS certificate support
 - Multi-replica Rancher deployment
-- **Native API token generation** (no manual UI steps required)
-- **Automated token persistence** to `~/.kube/.rancher-api-token`
+- API token generation and persistence
+- Rancher API endpoint availability verification
 
-### 3. rancher2_cluster Resource
-**Location:** `terraform/main.tf` - Native downstream cluster registration
+### 4. rke2_downstream_cluster Module
+**Location:** `terraform/modules/rke2_downstream_cluster/main.tf`
 
-Uses the native `rancher2` Terraform provider to automatically register the NPRD Apps cluster with Rancher Manager:
-- Creates cluster object in Rancher Manager
-- Automatically extracts registration credentials
-- Applies them to downstream cluster VMs
-- Manages lifecycle without manual intervention
+Installs RKE2 on downstream (apps) cluster nodes:
+- Similar to manager cluster but for agent-only deployment
+- Nodes configured as control-plane, etcd, and worker for full functionality
+- Kubeconfig management
+- Readiness verification
+
+### 5. rancher_downstream_registration Module (NEW)
+**Location:** `terraform/modules/rancher_downstream_registration/main.tf`
+
+Registers downstream cluster with Rancher Manager using manifest-based approach:
+- Fetches cluster registration manifest from Rancher API
+- Applies manifest to all cluster nodes via kubectl
+- Manifest includes RBAC, ServiceAccount, Deployment, Secrets
+- cattle-cluster-agent pods automatically register cluster
+
+**Why this approach (vs. system-agent-install.sh)?**
+- ✅ Manifest-based: Self-contained YAML, no external script downloads
+- ✅ Reliable: Uses public /v3/import/{token} endpoint
+- ✅ Simple: Just `kubectl apply -f manifest.yaml`
+- ✅ No timeouts: Doesn't rely on problematic /v3/connect/agent endpoint
+- ✅ Works everywhere: Works on networks with strict egress controls
 
 **Key Features:**
-- ✅ **Zero manual steps** - No copy/paste from Rancher UI
-- ✅ **Fully automated** - Single `terraform apply` does everything
-- ✅ **Native provider** - Uses official Rancher Terraform provider
-- ✅ **Self-healing** - Token automatically refreshed if needed
-- ✅ **CI/CD friendly** - No interactive steps required
+- Automatic token creation/retrieval
+- Manifest URL construction with token
+- Multi-node deployment via SSH
+- Proper error handling and logging
+
+## Deployment Workflow
+
+```
+terraform apply
+├── 1. Create VMs (10-15 min)
+│   ├── Proxmox VM provisioning
+│   ├── Cloud-init networking setup
+│   └── SSH connectivity verification
+├── 2. Install RKE2 on Manager (5-10 min)
+│   ├── Install RKE2 on first server
+│   ├── Join additional servers
+│   ├── Retrieve kubeconfig
+│   └── Store locally in ~/.kube/rancher-manager.yaml
+├── 3. Deploy Rancher on Manager (5-10 min)
+│   ├── Install cert-manager
+│   ├── Deploy Rancher Helm chart
+│   ├── Create API token via Rancher API
+│   ├── Persist token to ~/.kube/.rancher-api-token
+│   └── Configure bootstrap password & Ingress
+├── 4. Register Downstream Cluster (MANIFEST-BASED) (2-3 min)
+│   ├── Fetch registration manifest from Rancher API
+│   ├── Apply manifest to all downstream nodes via kubectl
+│   ├── Create cattle-cluster-agent Deployment
+│   └── Pods automatically register with Rancher Manager
+└── 5. Install RKE2 on Apps Cluster (5-10 min)
+    ├── Install RKE2 on first node
+    ├── Join additional nodes
+    ├── System-agent auto-registers with Rancher
+    └── Retrieve kubeconfig to ~/.kube/nprd-apps.yaml
+
+Total Time: 30-50 minutes (fully automated, no manual steps)
+```
 
 ## Updated main.tf
 
-The main Terraform file now orchestrates:
+The main Terraform file orchestrates the deployment:
 
 ```hcl
 # 1. Provision VMs
@@ -77,7 +133,12 @@ module "rke2_manager" { ... }
 # 3. Deploy Rancher (creates API token)
 module "rancher_deployment" { ... }
 
-# 4. Register Downstream Cluster (NATIVE METHOD)
+# 4. Register Downstream Cluster (MANIFEST-BASED)
+module "rancher_downstream_registration" { ... }
+
+# 5. Install RKE2 on Apps Cluster
+module "rke2_apps" { ... }
+```
 resource "rancher2_cluster" "nprd_apps" { ... }
 
 # 5. Install RKE2 on Apps Cluster

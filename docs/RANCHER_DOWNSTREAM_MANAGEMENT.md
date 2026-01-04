@@ -1,24 +1,64 @@
 # Rancher Downstream Cluster Management
 
-**Last Updated**: January 3, 2026  
-**Status**: ✅ **FULLY AUTOMATED** with API-Based Rancher Registration
+**Last Updated**: January 4, 2026  
+**Status**: ✅ **FULLY AUTOMATED** with Manifest-Based Registration
 
 This guide explains how to automatically register downstream (NPRD Apps) clusters with Rancher Manager using Terraform.
 
 ## Overview
 
-The deployment now provides **end-to-end automated downstream cluster registration** using the Rancher REST API. When you set `register_downstream_cluster = true` in `terraform.tfvars`, the NPRD Apps cluster will:
+The deployment provides **end-to-end automated downstream cluster registration** using Rancher's manifestUrl endpoint. When you set `register_downstream_cluster = true` in `terraform.tfvars`, the NPRD Apps cluster will:
 
 1. Deploy 3 RKE2 nodes
 2. Configure proper DNS servers  
-3. Terraform creates cluster object via Rancher API
-4. VMs automatically install Rancher system-agent during RKE2 initialization
-5. Cluster automatically registers with Rancher Manager
-6. Nodes automatically become operational
+3. Fetch cluster registration manifest from Rancher API
+4. Apply manifest directly via kubectl (includes RBAC, ServiceAccount, Deployment)
+5. cattle-cluster-agent pods automatically register with Rancher Manager
+6. Cluster automatically becomes operational in Rancher
 
 **Total deployment time**: ~40-50 minutes (VMs + RKE2 + **automatic** Rancher registration)
 
 **No manual Rancher UI steps required!** ✅
+
+## Registration Method: Manifest-Based (NEW - January 4, 2026)
+
+**Changed from**: system-agent-install.sh approach  
+**Why**: More reliable, simpler, no external dependencies  
+**What improved**: 
+- ✅ Eliminates timeout issues with `/v3/connect/agent` endpoint
+- ✅ Self-contained manifests (no need to download installation scripts)
+- ✅ Automatic CA certificate configuration
+- ✅ Works reliably on networks with strict egress controls
+
+### How It Works
+
+1. **Get registration token** from Rancher API: `POST /v3/clusterregistrationtokens`
+2. **Fetch manifest** from manifestUrl endpoint: `GET /v3/import/{token}_{cluster-id}.yaml`
+3. **Apply manifest** to cluster: `kubectl apply -f -` (includes cattle-cluster-agent deployment)
+4. **Pods register automatically**: cattle-cluster-agent pods connect to Rancher and register
+
+### Manifest Contents
+
+The manifest provided by `manifestUrl` includes:
+
+```yaml
+# RBAC for cluster agent
+- ClusterRole: "cattle-cluster-agent"
+- ClusterRoleBinding: "cattle-cluster-agent"
+
+# ServiceAccount and secrets
+- ServiceAccount: "cattle" (cattle-system namespace)
+- Secret: "cattle-credentials" (token, url, namespace)
+
+# Agent deployment
+- Deployment: "cattle-cluster-agent"
+  - Image: docker.io/rancher/rancher-agent:v2.13.1
+  - Env: CATTLE_SERVER, CATTLE_TOKEN, CATTLE_CA_CHECKSUM
+  - Replicas: (distributed across cluster)
+
+# Service for agent pod discovery
+- Service: "cattle-cluster-agent"
+```
 
 ## Quick Start - Fully Automated
 

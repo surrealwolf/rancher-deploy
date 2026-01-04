@@ -752,6 +752,101 @@ purge_on_destroy = false
 
 When using RBD-backed storage in Proxmox.
 
+## Downstream Cluster Registration Issues
+
+### Issue: cattle-cluster-agent pods failing or not starting
+
+**Symptom:** Pods created but stuck in Error state, restarting frequently
+
+**Root Cause:** This was a common issue with the old system-agent-install.sh approach. The deployment now uses manifest-based registration which is much more reliable.
+
+**Current Status (January 4, 2026):**
+✅ Manifest-based registration (manifestUrl) is the **recommended and default approach**
+- Self-contained Kubernetes manifests (no external script downloads)
+- Automatic CA certificate configuration
+- cattle-cluster-agent pods deploy successfully and register with Rancher
+
+**If you still experience issues:**
+
+1. **Verify manifest was applied successfully:**
+   ```bash
+   ssh ubuntu@192.168.14.110
+   sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml \
+     get pods -n cattle-system
+   ```
+
+2. **Check pod logs for error details:**
+   ```bash
+   ssh ubuntu@192.168.14.110
+   sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml \
+     logs -n cattle-system cattle-cluster-agent-<pod-hash> --tail=50
+   ```
+
+3. **Verify cluster object exists in Rancher Manager:**
+   ```bash
+   export KUBECONFIG=~/.kube/rancher-manager.yaml
+   kubectl get clusters.management.cattle.io c-7c2vb
+   ```
+
+4. **Check Rancher logs for rejection messages:**
+   ```bash
+   export KUBECONFIG=~/.kube/rancher-manager.yaml
+   kubectl logs -n cattle-system -l app=rancher --tail=100 | grep -i cluster
+   ```
+
+### Issue: Manifest URL request times out or returns 404
+
+**Symptom:** Error fetching `/v3/import/{token}_{cluster-id}.yaml`
+
+**Solutions:**
+
+1. **Verify API token is valid:**
+   ```bash
+   curl -sk -H "Authorization: Bearer $(cat ~/.kube/.rancher-api-token)" \
+     https://rancher.example.com/v3/clusters
+   # Should return cluster list without error
+   ```
+
+2. **Verify cluster ID is correct:**
+   ```bash
+   # Cluster ID format: c-7c2vb
+   # Token format: rwn6w7kn48pzczv22xxz6cw6lsltfslst6bqm4shnjzh7pcqrkx7cl
+   curl -sk -H "Authorization: Bearer $TOKEN" \
+     https://rancher.example.com/v3/import/$TOKEN_c-7c2vb.yaml
+   ```
+
+3. **Check Rancher API is accessible from cluster nodes:**
+   ```bash
+   ssh ubuntu@192.168.14.110
+   curl -sk https://rancher.example.com/health
+   nslookup rancher.example.com
+   ```
+
+### Legacy Issue: system-agent-install.sh script timeout
+
+**Status:** ⚠️ **DEPRECATED** - Use manifest-based approach instead
+
+**What was the problem?**
+```
+ERROR: https://rancher.example.com/ping is not accessible (Could not resolve host: rancher.dataknife.net)
+curl: (28) Operation timed out after 60002 milliseconds with 0 bytes received
+```
+
+**Root cause:**
+The old system-agent-install.sh script relies on the `/v3/connect/agent` endpoint which doesn't respond reliably from external nodes. The script would hang for 60+ seconds trying to fetch connection information.
+
+**Why we switched to manifest-based:**
+- ✅ Uses public `/v3/import/{token}` endpoint (not internal `/v3/connect/agent`)
+- ✅ Provides self-contained YAML manifest
+- ✅ No external script downloads required
+- ✅ Works on networks with strict egress controls
+- ✅ Includes proper CA certificate configuration
+
+**If you encounter this in old modules:**
+- The `system_agent_install` module in `terraform/modules/` is **deprecated**
+- Use `rancher_downstream_registration` module instead
+- Old module kept for reference only, disabled by default
+
 ## Still Having Issues?
 
 1. **Gather diagnostics:**
@@ -763,14 +858,15 @@ When using RBD-backed storage in Proxmox.
    ```
 
 2. **Check documentation:**
-   - [TERRAFORM_GUIDE.md](TERRAFORM_GUIDE.md) - Deployment guide
-   - [ARCHITECTURE.md](ARCHITECTURE.md) - System design
-   - [GETTING_STARTED.md](GETTING_STARTED.md) - Setup checklist
+   - [RANCHER_DOWNSTREAM_MANAGEMENT.md](RANCHER_DOWNSTREAM_MANAGEMENT.md) - Cluster registration guide
+   - [MODULES_AND_AUTOMATION.md](MODULES_AND_AUTOMATION.md) - Terraform modules
+   - [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Complete deployment walkthrough
 
 3. **Review logs:**
    - Proxmox task history (Datacenter → Tasks)
    - VM console logs (VMs → Select VM → Console)
    - Terraform debug output (TF_LOG=debug)
+   - Rancher logs (kubectl logs -n cattle-system)
 
 ## Related Documentation
 
