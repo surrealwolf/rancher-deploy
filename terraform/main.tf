@@ -240,6 +240,13 @@ module "nprd_apps_primary" {
   cluster_aliases    = var.apps_cluster_aliases
   rke2_server_ip     = ""
 
+  # Rancher registration - system-agent installation
+  register_with_rancher        = true  # Enable system-agent for automatic Rancher registration
+  rancher_hostname             = var.rancher_hostname
+  rancher_ingress_ip           = var.rancher_manager_ip  # IP of Rancher ingress
+  rancher_registration_token   = ""  # Will be obtained from Rancher API
+  rancher_ca_checksum          = ""  # Will be obtained from Rancher API
+
   # CRITICAL: Only build after manager cluster is fully ready
   depends_on = [
     module.rke2_manager,
@@ -295,6 +302,13 @@ module "nprd_apps_additional" {
   cluster_hostname   = var.apps_cluster_hostname
   cluster_primary_ip = var.apps_cluster_primary_ip
   cluster_aliases    = var.apps_cluster_aliases
+
+  # Rancher registration - system-agent installation
+  register_with_rancher        = true  # Enable system-agent for automatic Rancher registration
+  rancher_hostname             = var.rancher_hostname
+  rancher_ingress_ip           = var.rancher_manager_ip  # IP of Rancher ingress
+  rancher_registration_token   = ""  # Will be obtained from Rancher API
+  rancher_ca_checksum          = ""  # Will be obtained from Rancher API
 
   depends_on = [
     module.nprd_apps_primary,

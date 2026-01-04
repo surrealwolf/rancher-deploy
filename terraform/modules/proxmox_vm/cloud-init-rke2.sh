@@ -231,7 +231,51 @@ log "RKE2 installation complete. Service will start automatically."
 log "ⓘ Note: RKE2 service may take several minutes to fully initialize"
 log "ⓘ You can check status later with: systemctl status rke2-server"
 
-log "✓ RKE2 server installation complete"
+# ============ RANCHER SYSTEM-AGENT INSTALLATION (Downstream Clusters Only) ============
+# System-agent enables automatic registration with Rancher Manager
+if [ "${REGISTER_WITH_RANCHER}" = "true" ] && [ -n "${RANCHER_HOSTNAME}" ]; then
+  log "============================================================="
+  log "Installing rancher-system-agent for Rancher registration..."
+  log "============================================================="
+  
+  # Wait for RKE2 server to be fully ready before installing system-agent
+  log "Waiting for RKE2 to initialize (max 5 minutes)..."
+  READY=0
+  for i in {1..150}; do
+    if [ -f /var/lib/rancher/rke2/server/node-token ]; then
+      READY=1
+      log "✓ RKE2 server ready at attempt $i"
+      break
+    fi
+    if [ $((i % 30)) -eq 0 ]; then
+      log "  RKE2 initializing... attempt $i/150"
+    fi
+    sleep 2
+  done
+  
+  if [ $READY -eq 1 ]; then
+    # Install rancher-system-agent
+    log "Installing rancher-system-agent package..."
+    curl -sfL https://get.rancher.io/system-agent-install.sh | sh - > /var/log/rancher-system-agent-install.log 2>&1
+    
+    if [ $? -eq 0 ]; then
+      log "✓ rancher-system-agent installation successful"
+    else
+      log "⚠ rancher-system-agent installation may have issues, checking logs..."
+      tail -20 /var/log/rancher-system-agent-install.log
+    fi
+  else
+    log "⚠ RKE2 server not ready for system-agent installation (node-token not found)"
+  fi
+else
+  if [ "${REGISTER_WITH_RANCHER}" != "true" ]; then
+    log "ⓘ System-agent installation skipped (REGISTER_WITH_RANCHER=false)"
+  else
+    log "ⓘ System-agent installation skipped (RANCHER_HOSTNAME not set)"
+  fi
+fi
+
+log "=== RKE2 Provisioning Complete ==="
 
 # Verify systemd unit exists, then enable and start if needed
 if [ -f /usr/local/lib/systemd/system/rke2-server.service ]; then

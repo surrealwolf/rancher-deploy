@@ -149,3 +149,8 @@ variable "apps_cluster_aliases" {
   type        = list(string)
   default     = []
 }
+variable "rancher_manager_ip" {
+  description = "IP address of Rancher Manager ingress (for downstream cluster registration)"
+  type        = string
+  default     = ""
+}
