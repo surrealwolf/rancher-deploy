@@ -630,12 +630,56 @@ resource "null_resource" "merge_kubeconfigs" {
       APPS_CONFIG="$HOME/.kube/nprd-apps.yaml"
       
       # Merge manager and apps kubeconfigs into default config
+      # Create unique users for each cluster to avoid credential conflicts
       if [ -f "$${MANAGER_CONFIG}" ] && [ -f "$${APPS_CONFIG}" ]; then
         echo "Merging manager and apps kubeconfigs..."
-        KUBECONFIG="$HOME/.kube/config:$${MANAGER_CONFIG}:$${APPS_CONFIG}" kubectl config view --flatten > $HOME/.kube/config.tmp
+        
+        # First merge configs (this will create a single "default" user)
+        KUBECONFIG="$${MANAGER_CONFIG}:$${APPS_CONFIG}" kubectl config view --flatten > $HOME/.kube/config.tmp
         mv $HOME/.kube/config.tmp $HOME/.kube/config
         chmod 600 $HOME/.kube/config
-        echo "✓ Merged both kubeconfigs to $HOME/.kube/config"
+        
+        # Extract certificates to temporary files for setting unique users
+        TEMP_DIR=$(mktemp -d)
+        trap "rm -rf $${TEMP_DIR}" EXIT
+        
+        # Extract manager user certs (use --raw to get actual data, not masked)
+        kubectl config view --kubeconfig="$${MANAGER_CONFIG}" --raw -o json 2>/dev/null | \
+          jq -r '.users[0].user."client-certificate-data"' 2>/dev/null | \
+          base64 -d > "$${TEMP_DIR}/manager-cert.pem" 2>/dev/null || true
+        kubectl config view --kubeconfig="$${MANAGER_CONFIG}" --raw -o json 2>/dev/null | \
+          jq -r '.users[0].user."client-key-data"' 2>/dev/null | \
+          base64 -d > "$${TEMP_DIR}/manager-key.pem" 2>/dev/null || true
+        
+        # Extract apps user certs (use --raw to get actual data, not masked)
+        kubectl config view --kubeconfig="$${APPS_CONFIG}" --raw -o json 2>/dev/null | \
+          jq -r '.users[0].user."client-certificate-data"' 2>/dev/null | \
+          base64 -d > "$${TEMP_DIR}/apps-cert.pem" 2>/dev/null || true
+        kubectl config view --kubeconfig="$${APPS_CONFIG}" --raw -o json 2>/dev/null | \
+          jq -r '.users[0].user."client-key-data"' 2>/dev/null | \
+          base64 -d > "$${TEMP_DIR}/apps-key.pem" 2>/dev/null || true
+        
+        # Create unique users for each cluster
+        if [ -s "$${TEMP_DIR}/manager-cert.pem" ] && [ -s "$${TEMP_DIR}/manager-key.pem" ]; then
+          kubectl config set-credentials manager-user \
+            --client-certificate="$${TEMP_DIR}/manager-cert.pem" \
+            --client-key="$${TEMP_DIR}/manager-key.pem" \
+            --embed-certs=true 2>/dev/null || true
+          kubectl config set-context rancher-manager --cluster=rancher-manager --user=manager-user 2>/dev/null || true
+        fi
+        
+        if [ -s "$${TEMP_DIR}/apps-cert.pem" ] && [ -s "$${TEMP_DIR}/apps-key.pem" ]; then
+          kubectl config set-credentials apps-user \
+            --client-certificate="$${TEMP_DIR}/apps-cert.pem" \
+            --client-key="$${TEMP_DIR}/apps-key.pem" \
+            --embed-certs=true 2>/dev/null || true
+          kubectl config set-context nprd-apps --cluster=nprd-apps --user=apps-user 2>/dev/null || true
+        fi
+        
+        # Cleanup temp directory
+        rm -rf "$${TEMP_DIR}"
+        
+        echo "✓ Merged both kubeconfigs to $HOME/.kube/config with unique users"
       elif [ -f "$${MANAGER_CONFIG}" ]; then
         echo "Merging manager kubeconfig (apps not yet available)..."
         KUBECONFIG="$HOME/.kube/config:$${MANAGER_CONFIG}" kubectl config view --flatten > $HOME/.kube/config.tmp
