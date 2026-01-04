@@ -35,8 +35,8 @@ provider "proxmox" {
 provider "rancher2" {
   api_url   = "https://${var.rancher_hostname}"
   token_key = var.register_downstream_cluster ? (
-    try(trimspace(file(pathexpand("~/.kube/.rancher-api-token"))), "") != "" ? 
-      trimspace(file(pathexpand("~/.kube/.rancher-api-token"))) : 
+    try(trimspace(file(pathexpand("${path.root}/../config/.rancher-api-token"))), "") != "" ? 
+      trimspace(file(pathexpand("${path.root}/../config/.rancher-api-token"))) : 
       var.rancher_api_token
   ) : "placeholder-token-not-used"
   insecure  = true  # For self-signed certificates

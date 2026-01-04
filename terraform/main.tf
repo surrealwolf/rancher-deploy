@@ -61,7 +61,7 @@ module "rancher_manager_primary" {
 
 locals {
   manager_primary_ip = split("/", module.rancher_manager_primary.ip_address)[0]
-  manager_token_file = "${path.module}/.manager-token"
+  manager_token_file = "${pathexpand("${path.root}/../config")}/.manager-token"
 }
 
 resource "null_resource" "fetch_manager_token" {
@@ -73,7 +73,7 @@ resource "null_resource" "fetch_manager_token" {
   provisioner "local-exec" {
     when       = destroy
     on_failure = continue
-    command    = "rm -f ${path.module}/.manager-token"
+    command    = "rm -f ${pathexpand("${path.root}/../config")}/.manager-token"
   }
 
   depends_on = [
@@ -81,8 +81,9 @@ resource "null_resource" "fetch_manager_token" {
   ]
 }
 
-# Read the token back from file
+# Read the token back from file (optional - may not exist during destroy)
 data "local_file" "manager_token" {
+  count    = fileexists(local.manager_token_file) ? 1 : 0
   filename = local.manager_token_file
   depends_on = [
     null_resource.fetch_manager_token
@@ -132,7 +133,7 @@ module "rancher_manager_additional" {
   rke2_version       = "v1.34.3+rke2r1"
   is_rke2_server     = true
   rke2_is_primary    = false  # NEW: marks this as secondary node
-  rke2_server_token  = trimspace(data.local_file.manager_token.content)  # Token fetched locally from primary
+  rke2_server_token  = try(trimspace(data.local_file.manager_token[0].content), "")  # Token fetched locally from primary
   rke2_server_ip     = local.manager_primary_ip  # Primary IP
 
   # CRITICAL: Only build after primary is ready AND token is fetched
@@ -170,13 +171,13 @@ module "rke2_manager" {
 # ============================================================================
 
 locals {
-  apps_primary_ip = split("/", module.nprd_apps_primary.ip_address)[0]
-  apps_token_file = "${path.module}/.apps-token"
+  nprd_apps_primary_ip = split("/", module.nprd_apps_primary.ip_address)[0]
+  nprd_apps_token_file = "${pathexpand("${path.root}/../config")}/.nprd-apps-token"
 }
 
-resource "null_resource" "fetch_apps_token" {
+resource "null_resource" "fetch_nprd_apps_token" {
   provisioner "local-exec" {
-    command = "bash ${path.module}/fetch-token.sh ${var.ssh_private_key} ${local.apps_primary_ip} ${local.apps_token_file}"
+    command = "bash ${path.module}/fetch-token.sh ${var.ssh_private_key} ${local.nprd_apps_primary_ip} ${local.nprd_apps_token_file}"
   }
 
   depends_on = [
@@ -184,11 +185,12 @@ resource "null_resource" "fetch_apps_token" {
   ]
 }
 
-# Read the apps token back from file
-data "local_file" "apps_token" {
-  filename = local.apps_token_file
+# Read the nprd-apps token back from file (optional - may not exist during destroy)
+data "local_file" "nprd_apps_token" {
+  count    = fileexists(local.nprd_apps_token_file) ? 1 : 0
+  filename = local.nprd_apps_token_file
   depends_on = [
-    null_resource.fetch_apps_token
+    null_resource.fetch_nprd_apps_token
   ]
 }
 
@@ -278,12 +280,12 @@ module "nprd_apps_additional" {
   rke2_version       = "v1.34.3+rke2r1"
   is_rke2_server     = true
   rke2_is_primary    = false
-  rke2_server_token  = trimspace(data.local_file.apps_token.content)  # Token fetched locally from apps primary
-  rke2_server_ip     = local.apps_primary_ip
+  rke2_server_token  = try(trimspace(data.local_file.nprd_apps_token[0].content), "")  # Token fetched locally from nprd-apps primary
+  rke2_server_ip     = local.nprd_apps_primary_ip
 
   depends_on = [
     module.nprd_apps_primary,
-    data.local_file.apps_token
+    data.local_file.nprd_apps_token
   ]
 }
 

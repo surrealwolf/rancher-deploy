@@ -10,6 +10,10 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
+# Terraform State Files (stored in dedicated state/ folder)
+state/
+!state/.gitkeep
+
 # IDE
 .idea/
 *.swp
