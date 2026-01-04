@@ -312,13 +312,13 @@ fi
 # ============ FIX COREDNS DNS FORWARDING ============
 # Ensure CoreDNS properly forwards external DNS queries to upstream DNS servers
 log "Configuring CoreDNS to properly forward external DNS queries..."
-export PATH="/var/lib/rancher/rke2/bin:$PATH"
-export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+# Use sudo for kubectl access since kubeconfig requires root permissions
+KUBECTL="sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml"
 
 # Wait for CoreDNS to be ready
 DNS_READY=0
 for i in {1..60}; do
-  if /var/lib/rancher/rke2/bin/kubectl get deployment -n kube-system rke2-coredns-rke2-coredns &>/dev/null 2>&1; then
+  if $KUBECTL get deployment -n kube-system rke2-coredns-rke2-coredns &>/dev/null 2>&1; then
     DNS_READY=1
     log "✓ CoreDNS deployment found at attempt $i"
     break
@@ -333,19 +333,28 @@ if [ $DNS_READY -eq 1 ]; then
   # Patch CoreDNS ConfigMap to explicitly forward to upstream DNS servers
   # This ensures external domain resolution works reliably (e.g., rancher.dataknife.net -> 192.168.14.100)
   log "Patching CoreDNS ConfigMap with explicit upstream DNS forwarding..."
-  /var/lib/rancher/rke2/bin/kubectl patch configmap rke2-coredns-rke2-coredns -n kube-system -p '{
+  if $KUBECTL patch configmap rke2-coredns-rke2-coredns -n kube-system -p '{
     "data": {
-      "Corefile": ".:53 {\n    errors\n    health {\n        lameduck 10s\n    }\n    ready\n    kubernetes  cluster.local  cluster.local in-addr.arpa ip6.arpa {\n        pods insecure\n        fallthrough in-addr.arpa ip6.arpa\n        ttl 30\n    }\n    prometheus  0.0.0.0:9153\n    forward  . 192.168.1.1 1.1.1.1\n    cache  30\n    loop\n    reload\n    loadbalance\n}\n"
+      "Corefile": ".:53 {\n    errors\n    health {\n        lameduck 10s\n    }\n    ready\n    kubernetes  cluster.local  cluster.local in-addr.arpa ip6.arpa {\n        pods insecure\n        fallthrough in-addr.arpa ip6.arpa\n        ttl 30\n    }\n    prometheus  0.0.0.0:9153\n    forward  . 192.168.1.1 1.1.1.1\n    cache  5\n    loop\n    reload\n    loadbalance\n}\n"
     }
-  }' &>/dev/null 2>&1 || log "⚠ CoreDNS ConfigMap patch attempted but may have failed"
-  
-  # Restart CoreDNS pods to pick up new configuration
-  log "Restarting CoreDNS pods to apply DNS configuration..."
-  /var/lib/rancher/rke2/bin/kubectl rollout restart deployment/rke2-coredns-rke2-coredns -n kube-system &>/dev/null 2>&1 || log "⚠ CoreDNS restart attempted"
-  
-  log "✓ CoreDNS DNS forwarding configured to use 192.168.1.1 and 1.1.1.1"
+  }' 2>&1; then
+    log "✓ CoreDNS ConfigMap patched successfully"
+    
+    # Restart CoreDNS pods to pick up new configuration
+    log "Restarting CoreDNS pods to apply DNS configuration..."
+    if $KUBECTL rollout restart deployment/rke2-coredns-rke2-coredns -n kube-system 2>&1; then
+      log "✓ CoreDNS pods restarted successfully"
+      log "✓ CoreDNS DNS forwarding configured to use 192.168.1.1 and 1.1.1.1"
+    else
+      log "⚠ CoreDNS restart failed, but ConfigMap was patched. Pods will pick up config on next restart."
+    fi
+  else
+    log "⚠ CoreDNS ConfigMap patch failed. This may be due to permissions or timing. Check logs for details."
+    log "ℹ You can manually patch CoreDNS later using: sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml patch configmap rke2-coredns-rke2-coredns -n kube-system -p '{\"data\":{\"Corefile\":\"...\"}}'"
+  fi
 else
   log "⚠ CoreDNS not ready yet, DNS forwarding will be configured when cluster initializes"
+  log "ℹ You can manually patch CoreDNS later using the fix script: ./scripts/fix-coredns-dns.sh"
 fi
 
 else

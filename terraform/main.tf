@@ -177,6 +177,7 @@ module "rke2_manager" {
   )
   ssh_private_key_path = var.ssh_private_key
   ssh_user             = "ubuntu"
+  dns_servers          = join(" ", var.clusters["manager"].dns_servers)
 
   depends_on = [
     module.rancher_manager_primary,
@@ -419,6 +420,7 @@ module "rke2_apps" {
   )
   ssh_private_key_path = var.ssh_private_key
   ssh_user             = "ubuntu"
+  dns_servers          = join(" ", var.clusters["nprd-apps"].dns_servers)
 
   depends_on = [
     module.nprd_apps_primary,
