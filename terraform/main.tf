@@ -14,6 +14,17 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
 }
 
 # ============================================================================
+# LOCAL VALUES FOR CLUSTER CONFIGURATION
+# ============================================================================
+
+locals {
+  # Dynamically determine downstream cluster name (first non-manager cluster)
+  downstream_cluster_name = var.downstream_cluster_name != "" ? var.downstream_cluster_name : [
+    for name in keys(var.clusters) : name if name != "manager"
+  ][0]
+}
+
+# ============================================================================
 # RANCHER MANAGER CLUSTER - PRIMARY NODE (manager-1)
 # Builds first, initializes RKE2, generates cluster token
 # ============================================================================
@@ -440,17 +451,17 @@ resource "null_resource" "create_downstream_cluster" {
       EXISTING=$(curl -sk \
         -H "Authorization: Bearer $${API_TOKEN}" \
         "https://${var.rancher_hostname}/v3/clusters" \
-        | grep -o '"name":"nprd-apps"' || echo "")
+        | grep -o '"name":"${local.downstream_cluster_name}"' || echo "")
       
       if [ -n "$${EXISTING}" ]; then
-        echo "  ✓ Cluster 'nprd-apps' already exists in Rancher"
+        echo "  ✓ Cluster '${local.downstream_cluster_name}' already exists in Rancher"
       else
-        echo "  Creating cluster 'nprd-apps'..."
+        echo "  Creating cluster '${local.downstream_cluster_name}'..."
         curl -sk \
           -X POST \
           -H "Authorization: Bearer $${API_TOKEN}" \
           -H "Content-Type: application/json" \
-          -d '{"name":"nprd-apps","description":"Non-production applications cluster"}' \
+          -d '{"name":"${local.downstream_cluster_name}","description":"Non-production applications cluster"}' \
           "https://${var.rancher_hostname}/v3/clusters" > /dev/null
         echo "  ✓ Cluster created successfully"
       fi
@@ -489,15 +500,15 @@ resource "null_resource" "fetch_downstream_cluster_id" {
         exit 1
       fi
       
-      # Query Rancher API for the nprd-apps cluster specifically
+      # Query Rancher API for the downstream cluster specifically (using jq for reliable JSON parsing)
       CLUSTER_ID=$(curl -sk \
         -H "Authorization: Bearer $${API_TOKEN}" \
         "https://${var.rancher_hostname}/v3/clusters" \
-        | grep -B 5 '"name":"nprd-apps"' | grep -o '"id":"[^"]*' | tail -1 | grep -o '[^:]*$' | sed 's/"//g' || echo "")
+        | jq -r '.data[] | select(.name=="${local.downstream_cluster_name}") | .id' 2>/dev/null || echo "")
       
       if [ -z "$${CLUSTER_ID}" ]; then
         echo "ERROR: Could not fetch downstream cluster ID from Rancher API"
-        echo "Ensure cluster 'nprd-apps' exists in Rancher Manager and API token is valid"
+        echo "Ensure cluster '${local.downstream_cluster_name}' exists in Rancher Manager and API token is valid"
         exit 1
       fi
       

@@ -155,6 +155,12 @@ variable "rancher_manager_ip" {
   default     = ""
 }
 
+variable "downstream_cluster_name" {
+  description = "Name of the downstream cluster to register with Rancher Manager. Defaults to first non-manager cluster from clusters map."
+  type        = string
+  default     = ""  # Empty = auto-detect first non-manager cluster
+}
+
 variable "downstream_cluster_id" {
   description = "DEPRECATED: Rancher cluster ID is now automatically fetched from Rancher API. This variable is kept for backward compatibility but is no longer used."
   type        = string

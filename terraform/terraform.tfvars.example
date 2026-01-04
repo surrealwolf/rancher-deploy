@@ -138,6 +138,22 @@ rancher_api_token = "token-xxxxx:your-secret-token"
 ssh_private_key = "~/.ssh/id_rsa"
 
 # ============================================================================
+# DOWNSTREAM CLUSTER REGISTRATION
+# ============================================================================
+
+# Name of the downstream cluster to register with Rancher Manager
+# Defaults to first non-manager cluster from clusters map (e.g., "nprd-apps")
+# Change this to register a different cluster or leave empty for auto-detection
+# downstream_cluster_name = "nprd-apps"  # Optional: specify explicitly
+
+# Enable automatic registration of downstream cluster with Rancher Manager
+# When true, Terraform will:
+# 1. Create the cluster resource in Rancher automatically via API
+# 2. Register all nodes with Rancher Manager automatically
+# No manual Rancher UI steps required!
+register_downstream_cluster = true
+
+# ============================================================================
 # NOTES FOR PRODUCTION
 # ============================================================================
 
