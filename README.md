@@ -65,7 +65,7 @@ Your Proxmox VE cluster must have:
 
 ### DNS Requirements
 
-Rancher requires DNS records pointing to all 3 manager nodes for HA. See [DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md) for configuration examples.
+Rancher requires DNS records pointing to all 3 manager nodes for HA. DNS is configured at the node level via `/etc/resolv.conf` - CoreDNS automatically inherits node DNS configuration. See [DNS_CONFIGURATION_GUIDE.md](docs/DNS_CONFIGURATION_GUIDE.md) for complete DNS setup and [DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md) for required DNS records.
 
 ### Supported Platforms
 
@@ -169,7 +169,7 @@ Core documentation for deployment and troubleshooting:
 - **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough, includes kubectl tools setup
 - **[docs/RANCHER_API_TOKEN_CREATION.md](docs/RANCHER_API_TOKEN_CREATION.md)** - How API tokens are created automatically, manual creation with curl
 - **[docs/RANCHER_DOWNSTREAM_MANAGEMENT.md](docs/RANCHER_DOWNSTREAM_MANAGEMENT.md)** - Automatic downstream cluster registration with Rancher Manager (manifest-based)
-- **[docs/DOWNSTREAM_REGISTRATION_FINDINGS.md](docs/DOWNSTREAM_REGISTRATION_FINDINGS.md)** - Technical findings on manifest-based vs. system-agent registration approach
+- **[docs/DNS_CONFIGURATION_GUIDE.md](docs/DNS_CONFIGURATION_GUIDE.md)** - Complete DNS configuration guide (node-level DNS, CoreDNS inheritance)
 - **[docs/DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md)** - DNS records required for Rancher and Kubernetes API access
 - **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning and VM configuration
 - **[docs/MODULES_AND_AUTOMATION.md](docs/MODULES_AND_AUTOMATION.md)** - Terraform modules, variables, and automation details

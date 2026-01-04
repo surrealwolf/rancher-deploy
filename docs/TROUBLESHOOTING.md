@@ -210,7 +210,13 @@ Error: VM already exists
    ```bash
    # In VM:
    cat /etc/resolv.conf
+   # Should show DNS servers (not 127.0.0.53)
+   # Example:
+   # nameserver 192.168.1.1
+   # nameserver 1.1.1.1
+   
    nslookup example.com
+   # Should resolve successfully
    ```
 
 4. **Test gateway reachability:**
@@ -868,8 +874,58 @@ The old system-agent-install.sh script relies on the `/v3/connect/agent` endpoin
    - Terraform debug output (TF_LOG=debug)
    - Rancher logs (kubectl logs -n cattle-system)
 
+## DNS Issues
+
+### Issue: Pods cannot resolve external DNS names
+
+**Symptom**: Pods fail to resolve domains like `rancher.dataknife.net`
+
+**Root Cause**: DNS is configured at node level via `/etc/resolv.conf`. CoreDNS pods inherit DNS from the node automatically.
+
+**Solutions**:
+
+1. **Check node DNS configuration**:
+   ```bash
+   ssh ubuntu@<node-ip>
+   cat /etc/resolv.conf
+   # Should show DNS servers, not 127.0.0.53
+   ```
+
+2. **Verify systemd-resolved is disabled**:
+   ```bash
+   systemctl status systemd-resolved
+   # Should show: inactive (dead)
+   ```
+
+3. **Check CoreDNS pod DNS**:
+   ```bash
+   kubectl exec -n kube-system <coredns-pod> -- cat /etc/resolv.conf
+   # Should match node /etc/resolv.conf
+   ```
+
+4. **Test DNS resolution**:
+   ```bash
+   # From node
+   nslookup rancher.dataknife.net
+   
+   # From pod
+   kubectl run -it --rm --restart=Never --image=busybox dns-test -- nslookup rancher.dataknife.net
+   ```
+
+**If DNS is incorrect**: Update Terraform variables and redeploy:
+```hcl
+# terraform/terraform.tfvars
+clusters = {
+  manager = {
+    dns_servers = ["192.168.1.1", "1.1.1.1"]
+  }
+}
+```
+
+See [DNS_CONFIGURATION_GUIDE.md](DNS_CONFIGURATION_GUIDE.md) for complete DNS troubleshooting.
+
 ## Related Documentation
 
-- [GETTING_STARTED.md](GETTING_STARTED.md) - Quick start guide
-- [TERRAFORM_GUIDE.md](TERRAFORM_GUIDE.md) - Deployment guide
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
+- [DNS_CONFIGURATION_GUIDE.md](DNS_CONFIGURATION_GUIDE.md) - Complete DNS configuration and troubleshooting
+- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Complete deployment walkthrough
+- [MODULES_AND_AUTOMATION.md](MODULES_AND_AUTOMATION.md) - Terraform modules
