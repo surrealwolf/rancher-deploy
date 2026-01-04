@@ -17,6 +17,11 @@ variable "server_ips" {
   type        = list(string)
 }
 
+variable "cluster_hostname" {
+  description = "FQDN for the cluster (e.g., manager.dataknife.net) - used in kubeconfig"
+  type        = string
+}
+
 variable "ssh_private_key_path" {
   description = "Path to SSH private key"
   type        = string
@@ -102,7 +107,7 @@ resource "null_resource" "get_kubeconfig" {
     command = <<-EOT
       echo "Retrieving actual kubeconfig from RKE2 primary server..."
       mkdir -p ~/.kube
-      ssh -i ${var.ssh_private_key_path} -o StrictHostKeyChecking=no ${var.ssh_user}@${var.server_ips[0]} 'sudo cat /etc/rancher/rke2/rke2.yaml' | sed 's/127.0.0.1/${var.server_ips[0]}/' > ~/.kube/${var.cluster_name}.yaml
+      ssh -i ${var.ssh_private_key_path} -o StrictHostKeyChecking=no ${var.ssh_user}@${var.server_ips[0]} 'sudo cat /etc/rancher/rke2/rke2.yaml' | sed 's/127.0.0.1/${var.cluster_hostname}/' > ~/.kube/${var.cluster_name}.yaml
       chmod 600 ~/.kube/${var.cluster_name}.yaml
       echo "✓ Manager kubeconfig updated with real credentials"
     EOT
@@ -118,7 +123,7 @@ output "kubeconfig_path" {
 
 output "api_server_url" {
   description = "Kubernetes API server URL"
-  value       = "https://${var.server_ips[0]}:6443"
+  value       = "https://${var.cluster_hostname}:6443"
 }
 
 output "cluster_name" {

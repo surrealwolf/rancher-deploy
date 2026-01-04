@@ -170,6 +170,7 @@ module "rke2_manager" {
   source = "./modules/rke2_manager_cluster"
 
   cluster_name         = "rancher-manager"
+  cluster_hostname     = var.manager_cluster_hostname  # Use FQDN instead of IP
   server_ips           = concat(
     [split("/", module.rancher_manager_primary.ip_address)[0]],
     [for node in module.rancher_manager_additional : split("/", node.ip_address)[0]]
