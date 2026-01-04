@@ -495,6 +495,36 @@ EOF
 }
 
 # ============================================================================
+# INSTALL SYSTEM-AGENT ON DOWNSTREAM CLUSTER NODES
+# Completes Rancher registration by installing system-agent pods
+# ============================================================================
+
+module "system_agent_install" {
+  count = var.register_downstream_cluster ? 1 : 0
+  
+  source = "./modules/system_agent_install"
+  
+  rancher_url            = "https://${var.rancher_hostname}"
+  rancher_token_file     = "/home/lee/git/rancher-deploy/config/.rancher-api-token"
+  cluster_id             = "c-7c2vb"  # NPRD cluster ID
+  install_script_path    = "${path.module}/../scripts/install-system-agent.sh"
+  ssh_private_key_path   = var.ssh_private_key
+  ssh_user               = "ubuntu"
+  
+  # Map of node names to IPs for NPRD apps cluster
+  cluster_nodes = {
+    "nprd-apps-1" = "192.168.14.110"
+    "nprd-apps-2" = "192.168.14.111"
+    "nprd-apps-3" = "192.168.14.112"
+  }
+  
+  depends_on = [
+    null_resource.register_nprd_cluster,
+    module.rke2_apps
+  ]
+}
+
+# ============================================================================
 # MERGE ALL KUBECONFIGS TO DEFAULT LOCATION
 # Merges manager and apps cluster kubeconfigs into ~/.kube/config
 # ============================================================================

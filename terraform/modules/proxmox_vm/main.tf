@@ -261,8 +261,8 @@ resource "proxmox_virtual_environment_vm" "vm" {
         "echo '${var.rancher_ingress_ip} ${var.rancher_hostname}' | sudo tee -a /etc/hosts > /dev/null",
         # Wait for RKE2 to be ready (token file should exist)
         "for i in {1..120}; do [ -f /var/lib/rancher/rke2/server/node-token ] && echo 'RKE2 ready!' && break || (echo 'Waiting for RKE2 token... $i/120' && sleep 5); done",
-        # Download and execute Rancher system-agent installation
-        "curl -kfL https://${var.rancher_hostname}/system-agent-install.sh | sudo sh -s - --server https://${var.rancher_hostname} --label 'cattle.io/os=linux' --token ${var.rancher_registration_token} --ca-checksum ${var.rancher_ca_checksum} --etcd --controlplane --worker"
+        # Attempt Rancher system-agent installation ONLY if credentials are available
+        "if [ -n '${var.rancher_registration_token}' ] && [ -n '${var.rancher_ca_checksum}' ]; then curl -kfL https://${var.rancher_hostname}/system-agent-install.sh | sudo sh -s - --server https://${var.rancher_hostname} --label 'cattle.io/os=linux' --token ${var.rancher_registration_token} --ca-checksum ${var.rancher_ca_checksum} --etcd --controlplane --worker; else echo 'Registration credentials not available - will be done post-deployment'; fi"
       ] : []
     ) : ["echo 'RKE2 disabled, skipping installation'"]
 
