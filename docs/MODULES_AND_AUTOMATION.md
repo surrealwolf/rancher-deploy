@@ -102,19 +102,140 @@ terraform apply
 │   ├── Create API token via Rancher API
 │   ├── Persist token to ~/.kube/.rancher-api-token
 │   └── Configure bootstrap password & Ingress
-├── 4. Register Downstream Cluster (MANIFEST-BASED) (2-3 min)
+├── 4. Extract Downstream Cluster ID (AUTOMATIC) (<1 min)
+│   ├── Call Rancher API to list clusters
+│   ├── Extract cluster ID from response (e.g., c-7c2vb)
+│   ├── Save to ~/.kube/.downstream-cluster-id
+│   └── **Zero manual steps required - fully automated**
+├── 5. Register Downstream Cluster (MANIFEST-BASED) (2-3 min)
 │   ├── Fetch registration manifest from Rancher API
 │   ├── Apply manifest to all downstream nodes via kubectl
 │   ├── Create cattle-cluster-agent Deployment
 │   └── Pods automatically register with Rancher Manager
-└── 5. Install RKE2 on Apps Cluster (5-10 min)
+└── 6. Install RKE2 on Apps Cluster (5-10 min)
     ├── Install RKE2 on first node
     ├── Join additional nodes
     ├── System-agent auto-registers with Rancher
     └── Retrieve kubeconfig to ~/.kube/nprd-apps.yaml
 
-Total Time: 30-50 minutes (fully automated, no manual steps)
+**Total Time: 30-50 minutes (fully automated, no manual steps)**
 ```
+
+## Cluster ID Extraction (NEW - Jan 4, 2026)
+
+### Problem Solved
+
+**Before**: Cluster ID was hardcoded in Terraform
+```hcl
+cluster_id = "c-7c2vb"  # ❌ Hardcoded, breaks on different clusters
+```
+
+**Now**: Cluster ID is dynamically extracted from Rancher API
+```hcl
+cluster_id = trimspace(data.local_file.downstream_cluster_id[0].content)  # ✅ Automatic
+```
+
+### How It Works
+
+1. **Rancher Manager creates cluster** during `module.rancher_deployment`
+2. **Terraform fetches cluster list** from Rancher API (`GET /v3/clusters`)
+3. **Cluster ID extracted** from API response (typically second cluster = downstream apps cluster)
+4. **Saved to file**: `~/.kube/.downstream-cluster-id`
+5. **Used automatically** by `rancher_downstream_registration` module
+
+### Terraform Implementation
+
+```hcl
+# 1. Call Rancher API to fetch cluster ID
+resource "null_resource" "fetch_downstream_cluster_id" {
+  count = var.register_downstream_cluster ? 1 : 0
+  
+  provisioner "local-exec" {
+    command = <<-EOT
+      # Read API token from file (created by deploy-rancher.sh)
+      API_TOKEN=$(cat "~/.kube/.rancher-api-token")
+      
+      # Query Rancher API for clusters
+      CLUSTER_ID=$(curl -sk \
+        -H "Authorization: Bearer ${API_TOKEN}" \
+        "https://rancher.example.com/v3/clusters" \
+        | grep -o '"id":"[^"]*' | sed 's/"//g' | head -2 | tail -1)
+      
+      # Save cluster ID to file
+      echo "${CLUSTER_ID}" > "~/.kube/.downstream-cluster-id"
+    EOT
+  }
+}
+
+# 2. Read cluster ID from file
+data "local_file" "downstream_cluster_id" {
+  count    = var.register_downstream_cluster ? 1 : 0
+  filename = "~/.kube/.downstream-cluster-id"
+  depends_on = [null_resource.fetch_downstream_cluster_id]
+}
+
+# 3. Use extracted ID in registration module
+module "rancher_downstream_registration" {
+  cluster_id = trimspace(data.local_file.downstream_cluster_id[0].content)
+}
+```
+
+### API Endpoint Used
+
+```bash
+# Endpoint
+GET https://rancher.example.com/v3/clusters
+
+# Headers
+Authorization: Bearer <token-from-rancher-api-token-file>
+
+# Response (sample)
+{
+  "data": [
+    {
+      "id": "local",
+      "name": "local",
+      "kind": "Cluster",
+      ...
+    },
+    {
+      "id": "c-7c2vb",           # ← EXTRACTED HERE
+      "name": "nprd-apps",
+      "kind": "Cluster",
+      ...
+    }
+  ]
+}
+```
+
+### Troubleshooting
+
+**Issue**: `ERROR: Could not fetch downstream cluster ID from Rancher API`
+
+**Solutions**:
+1. Verify Rancher Manager is running:
+   ```bash
+   export KUBECONFIG=~/.kube/rancher-manager.yaml
+   kubectl get pods -n cattle-system | grep rancher
+   ```
+
+2. Verify API token file exists and is readable:
+   ```bash
+   cat ~/.kube/.rancher-api-token
+   # Should print token starting with "token-"
+   ```
+
+3. Verify Rancher API is accessible:
+   ```bash
+   API_TOKEN=$(cat ~/.kube/.rancher-api-token)
+   curl -sk -H "Authorization: Bearer ${API_TOKEN}" \
+     https://rancher.example.com/v3/clusters | jq '.data[] | {id, name}'
+   ```
+
+4. Verify downstream cluster exists:
+   ```bash
+   # Should see at least 2 clusters: "local" (manager) and "c-XXXXX" (apps)
+   ```
 
 ## Updated main.tf
 
@@ -133,15 +254,14 @@ module "rke2_manager" { ... }
 # 3. Deploy Rancher (creates API token)
 module "rancher_deployment" { ... }
 
-# 4. Register Downstream Cluster (MANIFEST-BASED)
+# 4. Extract Downstream Cluster ID (AUTOMATIC)
+resource "null_resource" "fetch_downstream_cluster_id" { ... }
+data "local_file" "downstream_cluster_id" { ... }
+
+# 5. Register Downstream Cluster (MANIFEST-BASED)
 module "rancher_downstream_registration" { ... }
 
-# 5. Install RKE2 on Apps Cluster
-module "rke2_apps" { ... }
-```
-resource "rancher2_cluster" "nprd_apps" { ... }
-
-# 5. Install RKE2 on Apps Cluster
+# 6. Install RKE2 on Apps Cluster
 module "rke2_apps" { ... }
 ```
 

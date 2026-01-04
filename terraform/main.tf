@@ -415,6 +415,73 @@ module "rke2_apps" {
 }
 
 # ============================================================================
+# FETCH DOWNSTREAM CLUSTER ID FROM RANCHER API
+# Automatically extracts cluster ID after cluster is created in Rancher
+# ============================================================================
+
+locals {
+  cluster_id_file = "${abspath("${path.root}/../config")}/.downstream-cluster-id"
+}
+
+resource "null_resource" "fetch_downstream_cluster_id" {
+  count = var.register_downstream_cluster ? 1 : 0
+  
+  # This provisioner will call the Rancher API to find the cluster ID
+  # The cluster should have been created earlier in the deployment flow
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      
+      echo "[$(date +'%Y-%m-%d %H:%M:%S')] Fetching downstream cluster ID from Rancher API..."
+      
+      # Read API token from file
+      API_TOKEN=$(cat "${path.root}/../config/.rancher-api-token")
+      
+      if [ -z "$${API_TOKEN}" ]; then
+        echo "ERROR: API token file not found at ${path.root}/../config/.rancher-api-token"
+        exit 1
+      fi
+      
+      # Query Rancher API for clusters - look for the downstream cluster by name
+      CLUSTER_ID=$(curl -sk \
+        -H "Authorization: Bearer $${API_TOKEN}" \
+        "https://${var.rancher_hostname}/v3/clusters" \
+        | grep -o '"id":"[^"]*' | grep -o '[^:]*$' | sed 's/"//g' | head -2 | tail -1 || echo "")
+      
+      if [ -z "$${CLUSTER_ID}" ]; then
+        echo "ERROR: Could not fetch downstream cluster ID from Rancher API"
+        echo "Ensure cluster exists in Rancher Manager and API token is valid"
+        exit 1
+      fi
+      
+      echo "  ✓ Found downstream cluster ID: $${CLUSTER_ID}"
+      echo "$${CLUSTER_ID}" > "${abspath("${path.root}/../config")}/.downstream-cluster-id"
+    EOT
+  }
+  
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command    = "rm -f \"${abspath("${path.root}/../config")}/.downstream-cluster-id\""
+  }
+
+  depends_on = [
+    module.rancher_deployment,
+    null_resource.fetch_manager_token
+  ]
+}
+
+# Read the cluster ID from file
+data "local_file" "downstream_cluster_id" {
+  count    = var.register_downstream_cluster ? 1 : 0
+  filename = local.cluster_id_file
+  
+  depends_on = [
+    null_resource.fetch_downstream_cluster_id
+  ]
+}
+
+# ============================================================================
 # DOWNSTREAM CLUSTER REGISTRATION WITH RANCHER
 # Applies cluster registration manifest to all nodes
 # ============================================================================
@@ -426,7 +493,7 @@ module "rancher_downstream_registration" {
   
   rancher_url            = "https://${var.rancher_hostname}"
   rancher_token_file     = "/home/lee/git/rancher-deploy/config/.rancher-api-token"
-  cluster_id             = "c-7c2vb"  # NPRD cluster ID
+  cluster_id             = trimspace(data.local_file.downstream_cluster_id[0].content)
   ssh_private_key_path   = var.ssh_private_key
   ssh_user               = "ubuntu"
   kubeconfig_path        = "~/.kube/nprd-apps.yaml"

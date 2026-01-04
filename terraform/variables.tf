@@ -154,3 +154,9 @@ variable "rancher_manager_ip" {
   type        = string
   default     = ""
 }
+
+variable "downstream_cluster_id" {
+  description = "DEPRECATED: Rancher cluster ID is now automatically fetched from Rancher API. This variable is kept for backward compatibility but is no longer used."
+  type        = string
+  default     = ""  # Now fetched dynamically from Rancher API
+}

@@ -116,6 +116,13 @@ rancher_hostname = "rancher.example.com"
 # Required: rancher_api_token must be set for this to work
 register_downstream_cluster = true
 
+# Downstream cluster ID in Rancher (format: c-abc123)
+# DEPRECATED: This is now automatically fetched from Rancher API
+# The cluster ID is extracted after Rancher creates/imports the cluster
+# You can find it in Rancher UI under Cluster Management, but it's no longer required here
+# Kept for backward compatibility but no longer used
+# downstream_cluster_id = ""  # Leave empty - automatically populated from Rancher API
+
 # Rancher API token for cluster management
 # Obtain from Rancher: Account → API Tokens → Create API Token
 # Token format: token-xxxxx:secret
