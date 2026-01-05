@@ -1,0 +1,87 @@
+# Democratic CSI Helm Values for TrueNAS
+# Usage: helm install democratic-csi democratic-csi/democratic-csi -f democratic-csi-truenas.yaml
+
+driver:
+  name: truenas-nfs
+  enabled: true
+  logLevel: info
+
+# TrueNAS Configuration
+config:
+  truenas:
+    # TrueNAS hostname or IP address
+    host: "truenas.example.com"
+    
+    # API key from TrueNAS (System → API Keys)
+    apiKey: "your-api-key-here"
+    
+    # Protocol: https (recommended) or http
+    protocol: "https"
+    
+    # Port: 443 for HTTPS, 80 for HTTP
+    port: 443
+    
+    # Set to true if using self-signed certificate
+    allowInsecure: false
+    
+    # Dataset path on TrueNAS (e.g., /mnt/pool/k8s-storage)
+    dataset: "/mnt/pool/k8s-storage"
+    
+    # Optional: NFS server hostname (if different from API host)
+    # nfs:
+    #   server: "truenas-nfs.example.com"
+    #   share: "/mnt/pool/k8s-storage"
+
+# Storage Classes Configuration
+storageClasses:
+  # Default NFS storage class
+  - name: truenas-nfs
+    default: true
+    reclaimPolicy: Delete
+    volumeBindingMode: Immediate
+    allowVolumeExpansion: true
+    parameters:
+      fsType: "nfs"
+      parentDataset: "/mnt/pool/k8s-storage"
+      # Optional: NFS version (3 or 4)
+      # nfsVersion: "4"
+
+  # Optional: Fast storage class (for SSD pools)
+  # - name: truenas-nfs-fast
+  #   default: false
+  #   reclaimPolicy: Delete
+  #   volumeBindingMode: Immediate
+  #   allowVolumeExpansion: true
+  #   parameters:
+  #     fsType: "nfs"
+  #     parentDataset: "/mnt/ssd-pool/k8s-storage-fast"
+
+# Controller Configuration
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Node Configuration
+node:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Optional: RBAC configuration
+rbac:
+  create: true
+
+# Optional: Service account configuration
+serviceAccount:
+  create: true
+  name: ""
