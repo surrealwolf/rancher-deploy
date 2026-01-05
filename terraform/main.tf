@@ -1,12 +1,19 @@
 # ============================================================================
-# DOWNLOAD UBUNTU CLOUD IMAGE ONCE AT ROOT LEVEL
-# Reused by all VM modules instead of downloading multiple times
+# DOWNLOAD UBUNTU CLOUD IMAGE ON ALL PROXMOX NODES
+# Downloads image to each node so VMs can be created on any node
 # ============================================================================
 
+locals {
+  # List of all Proxmox nodes in the cluster
+  proxmox_nodes = ["pve1", "pve2"]
+}
+
 resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
+  for_each = toset(local.proxmox_nodes)
+
   content_type        = "import"
   datastore_id        = "images-import"
-  node_name           = var.proxmox_node
+  node_name           = each.value
   url                 = var.ubuntu_cloud_image_url
   file_name           = "ubuntu-noble-cloudimg-amd64.qcow2"
   overwrite           = true
@@ -35,8 +42,8 @@ module "rancher_manager_primary" {
   vm_name               = "rancher-manager-1"
   vm_id                 = var.vm_id_start_manager
   proxmox_node          = var.proxmox_node
-  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image.datastore_id
-  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image.file_name
+  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image[var.proxmox_node].datastore_id
+  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image[var.proxmox_node].file_name
   datastore_id          = var.clusters["manager"].storage
 
   cpu_cores    = var.clusters["manager"].cpu_cores
@@ -56,9 +63,9 @@ module "rancher_manager_primary" {
   rke2_enabled       = true
   rke2_version       = "v1.34.3+rke2r1"
   is_rke2_server     = true
-  rke2_is_primary    = true  # NEW: marks this as primary node
-  rke2_server_token  = ""    # Primary generates its own token
-  rke2_server_ip     = ""    # No upstream server for primary
+  rke2_is_primary    = true # NEW: marks this as primary node
+  rke2_server_token  = ""   # Primary generates its own token
+  rke2_server_ip     = ""   # No upstream server for primary
   cluster_hostname   = var.manager_cluster_hostname
   cluster_primary_ip = var.manager_cluster_primary_ip
   cluster_aliases    = var.manager_cluster_aliases
@@ -116,18 +123,18 @@ module "rancher_manager_additional" {
   for_each = {
     for i in range(1, var.clusters["manager"].node_count) :
     "manager-${i + 1}" => {
-      vm_id          = var.vm_id_start_manager + i
-      hostname       = "rancher-manager-${i + 1}"
-      ip_address     = "${var.clusters["manager"].ip_subnet}.${var.clusters["manager"].ip_start_octet + i}/24"
-      node_index     = i
+      vm_id      = var.vm_id_start_manager + i
+      hostname   = "rancher-manager-${i + 1}"
+      ip_address = "${var.clusters["manager"].ip_subnet}.${var.clusters["manager"].ip_start_octet + i}/24"
+      node_index = i
     }
   }
 
   vm_name               = each.value.hostname
   vm_id                 = each.value.vm_id
   proxmox_node          = var.proxmox_node
-  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image.datastore_id
-  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image.file_name
+  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image[var.proxmox_node].datastore_id
+  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image[var.proxmox_node].file_name
   datastore_id          = var.clusters["manager"].storage
 
   cpu_cores    = var.clusters["manager"].cpu_cores
@@ -147,9 +154,9 @@ module "rancher_manager_additional" {
   rke2_enabled       = true
   rke2_version       = "v1.34.3+rke2r1"
   is_rke2_server     = true
-  rke2_is_primary    = false  # NEW: marks this as secondary node
-  rke2_server_token  = try(trimspace(data.local_file.manager_token[0].content), "")  # Token fetched locally from primary
-  rke2_server_ip     = local.manager_primary_ip  # Primary IP
+  rke2_is_primary    = false                                                        # NEW: marks this as secondary node
+  rke2_server_token  = try(trimspace(data.local_file.manager_token[0].content), "") # Token fetched locally from primary
+  rke2_server_ip     = local.manager_primary_ip                                     # Primary IP
   cluster_hostname   = var.manager_cluster_hostname
   cluster_primary_ip = var.manager_cluster_primary_ip
   cluster_aliases    = var.manager_cluster_aliases
@@ -169,9 +176,9 @@ module "rancher_manager_additional" {
 module "rke2_manager" {
   source = "./modules/rke2_manager_cluster"
 
-  cluster_name         = "rancher-manager"
-  cluster_hostname     = var.manager_cluster_hostname  # Use FQDN instead of IP
-  server_ips           = concat(
+  cluster_name     = "rancher-manager"
+  cluster_hostname = var.manager_cluster_hostname # Use FQDN instead of IP
+  server_ips = concat(
     [split("/", module.rancher_manager_primary.ip_address)[0]],
     [for node in module.rancher_manager_additional : split("/", node.ip_address)[0]]
   )
@@ -225,8 +232,8 @@ module "nprd_apps_primary" {
   vm_name               = "nprd-apps-1"
   vm_id                 = var.vm_id_start_apps
   proxmox_node          = var.proxmox_node
-  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image.datastore_id
-  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image.file_name
+  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image[var.proxmox_node].datastore_id
+  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image[var.proxmox_node].file_name
   datastore_id          = var.clusters["nprd-apps"].storage
 
   cpu_cores    = var.clusters["nprd-apps"].cpu_cores
@@ -254,11 +261,11 @@ module "nprd_apps_primary" {
   rke2_server_ip     = ""
 
   # Rancher registration - system-agent installation
-  register_with_rancher        = true  # Enable system-agent for automatic Rancher registration
-  rancher_hostname             = var.rancher_hostname
-  rancher_ingress_ip           = var.rancher_manager_ip  # IP of Rancher ingress
-  rancher_registration_token   = ""  # Will be obtained from Rancher API
-  rancher_ca_checksum          = ""  # Will be obtained from Rancher API
+  register_with_rancher      = true # Enable system-agent for automatic Rancher registration
+  rancher_hostname           = var.rancher_hostname
+  rancher_ingress_ip         = var.rancher_manager_ip # IP of Rancher ingress
+  rancher_registration_token = ""                     # Will be obtained from Rancher API
+  rancher_ca_checksum        = ""                     # Will be obtained from Rancher API
 
   # CRITICAL: Only build after manager cluster AND Rancher are fully ready
   depends_on = [
@@ -279,18 +286,18 @@ module "nprd_apps_additional" {
   for_each = {
     for i in range(1, var.clusters["nprd-apps"].node_count) :
     "nprd-apps-${i + 1}" => {
-      vm_id          = var.vm_id_start_apps + i
-      hostname       = "nprd-apps-${i + 1}"
-      ip_address     = "${var.clusters["nprd-apps"].ip_subnet}.${var.clusters["nprd-apps"].ip_start_octet + i}/24"
-      node_index     = i
+      vm_id      = var.vm_id_start_apps + i
+      hostname   = "nprd-apps-${i + 1}"
+      ip_address = "${var.clusters["nprd-apps"].ip_subnet}.${var.clusters["nprd-apps"].ip_start_octet + i}/24"
+      node_index = i
     }
   }
 
   vm_name               = each.value.hostname
   vm_id                 = each.value.vm_id
   proxmox_node          = var.proxmox_node
-  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image.datastore_id
-  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image.file_name
+  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image[var.proxmox_node].datastore_id
+  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image[var.proxmox_node].file_name
   datastore_id          = var.clusters["nprd-apps"].storage
 
   cpu_cores    = var.clusters["nprd-apps"].cpu_cores
@@ -311,18 +318,85 @@ module "nprd_apps_additional" {
   rke2_version       = "v1.34.3+rke2r1"
   is_rke2_server     = true
   rke2_is_primary    = false
-  rke2_server_token  = try(trimspace(data.local_file.nprd_apps_token[0].content), "")  # Token fetched locally from nprd-apps primary
+  rke2_server_token  = try(trimspace(data.local_file.nprd_apps_token[0].content), "") # Token fetched locally from nprd-apps primary
   rke2_server_ip     = local.nprd_apps_primary_ip
   cluster_hostname   = var.apps_cluster_hostname
   cluster_primary_ip = var.apps_cluster_primary_ip
   cluster_aliases    = var.apps_cluster_aliases
 
   # Rancher registration - system-agent installation
-  register_with_rancher        = true  # Enable system-agent for automatic Rancher registration
-  rancher_hostname             = var.rancher_hostname
-  rancher_ingress_ip           = var.rancher_manager_ip  # IP of Rancher ingress
-  rancher_registration_token   = ""  # Will be obtained from Rancher API
-  rancher_ca_checksum          = ""  # Will be obtained from Rancher API
+  register_with_rancher      = true # Enable system-agent for automatic Rancher registration
+  rancher_hostname           = var.rancher_hostname
+  rancher_ingress_ip         = var.rancher_manager_ip # IP of Rancher ingress
+  rancher_registration_token = ""                     # Will be obtained from Rancher API
+  rancher_ca_checksum        = ""                     # Will be obtained from Rancher API
+
+  depends_on = [
+    module.nprd_apps_primary,
+    data.local_file.nprd_apps_token
+  ]
+}
+
+# ============================================================================
+# NPRD APPS CLUSTER - WORKER NODES (RKE2 Agent Mode)
+# Dedicated worker nodes for application workloads
+# Only created if worker_count > 0
+# ============================================================================
+
+module "nprd_apps_workers" {
+  source = "./modules/proxmox_vm"
+
+  for_each = var.clusters["nprd-apps"].worker_count > 0 ? {
+    for i in range(1, var.clusters["nprd-apps"].worker_count + 1) :
+    "nprd-apps-worker-${i}" => {
+      vm_id      = var.vm_id_start_apps + var.clusters["nprd-apps"].node_count + i - 1
+      hostname   = "nprd-apps-worker-${i}"
+      ip_address = "${var.clusters["nprd-apps"].ip_subnet}.${var.clusters["nprd-apps"].ip_start_octet + var.clusters["nprd-apps"].node_count + i - 1}/24"
+      node_index = var.clusters["nprd-apps"].node_count + i - 1
+      # Distribute workers across Proxmox nodes: first 2 on pve1, rest on pve2
+      # Cloud image is now downloaded to all nodes, so workers can be on any node
+      proxmox_node = i <= 2 ? "pve1" : var.proxmox_node
+    }
+  } : {}
+
+  vm_name               = each.value.hostname
+  vm_id                 = each.value.vm_id
+  proxmox_node          = each.value.proxmox_node
+  cloud_image_datastore = proxmox_virtual_environment_download_file.ubuntu_cloud_image[each.value.proxmox_node].datastore_id
+  cloud_image_file_name = proxmox_virtual_environment_download_file.ubuntu_cloud_image[each.value.proxmox_node].file_name
+  datastore_id          = var.clusters["nprd-apps"].storage
+
+  # Use worker-specific resources if provided, otherwise use server defaults
+  cpu_cores    = var.clusters["nprd-apps"].worker_cpu_cores > 0 ? var.clusters["nprd-apps"].worker_cpu_cores : var.clusters["nprd-apps"].cpu_cores
+  memory_mb    = var.clusters["nprd-apps"].worker_memory_mb > 0 ? var.clusters["nprd-apps"].worker_memory_mb : var.clusters["nprd-apps"].memory_mb
+  disk_size_gb = var.clusters["nprd-apps"].worker_disk_size_gb > 0 ? var.clusters["nprd-apps"].worker_disk_size_gb : var.clusters["nprd-apps"].disk_size_gb
+
+  hostname    = each.value.hostname
+  ip_address  = each.value.ip_address
+  gateway     = var.clusters["nprd-apps"].gateway
+  dns_servers = var.clusters["nprd-apps"].dns_servers
+  domain      = var.clusters["nprd-apps"].domain
+  vlan_id     = var.clusters["nprd-apps"].vlan_id
+
+  ssh_private_key = var.ssh_private_key
+
+  # RKE2 configuration - worker nodes (agent mode, NOT server mode)
+  rke2_enabled       = true
+  rke2_version       = "v1.34.3+rke2r1"
+  is_rke2_server     = false # Worker nodes run in agent mode
+  rke2_is_primary    = false
+  rke2_server_token  = try(trimspace(data.local_file.nprd_apps_token[0].content), "") # Token from apps primary
+  rke2_server_ip     = local.nprd_apps_primary_ip                                     # Connect to primary server
+  cluster_hostname   = var.apps_cluster_hostname
+  cluster_primary_ip = var.apps_cluster_primary_ip
+  cluster_aliases    = var.apps_cluster_aliases
+
+  # Rancher registration - system-agent installation
+  register_with_rancher      = true # Enable system-agent for automatic Rancher registration
+  rancher_hostname           = var.rancher_hostname
+  rancher_ingress_ip         = var.rancher_manager_ip # IP of Rancher ingress
+  rancher_registration_token = ""                     # Will be obtained from Rancher API
+  rancher_ca_checksum        = ""                     # Will be obtained from Rancher API
 
   depends_on = [
     module.nprd_apps_primary,
@@ -363,7 +437,7 @@ resource "null_resource" "cleanup_tokens_on_destroy" {
   provisioner "local-exec" {
     when       = destroy
     on_failure = continue
-    command = <<-EOT
+    command    = <<-EOT
       CONFIG_DIR="${path.root}/../config"
       echo "Cleaning up generated Rancher tokens and configs..."
       
@@ -373,13 +447,10 @@ resource "null_resource" "cleanup_tokens_on_destroy" {
         echo "  ✓ Removed: $${CONFIG_DIR}/.rancher-api-token"
       fi
       
-      # Note: Individual kubeconfig files (~/.kube/rancher-manager.yaml, nprd-apps.yaml)
-      # are not removed - they are merged into ~/.kube/config which user may want to keep
-      # To fully reset, manually: rm ~/.kube/rancher-manager.yaml ~/.kube/nprd-apps.yaml
+      # Note: Kubeconfig cleanup is handled by merge_kubeconfigs destroy provisioner
+      # Individual files and merged config entries are cleaned up there
       
       echo "✓ Cleanup complete"
-      echo "Note: Kubeconfig entries are merged into ~/.kube/config (not removed)"
-      echo "To reset: rm ~/.kube/rancher-manager.yaml ~/.kube/nprd-apps.yaml"
     EOT
   }
 
@@ -412,11 +483,16 @@ resource "null_resource" "cleanup_tokens_on_destroy" {
 module "rke2_apps" {
   source = "./modules/rke2_downstream_cluster"
 
-  cluster_name         = "nprd-apps"
-  cluster_hostname     = var.apps_cluster_hostname  # Use FQDN instead of IP
-  agent_ips            = concat(
+  cluster_name     = "nprd-apps"
+  cluster_hostname = var.apps_cluster_hostname # Use FQDN instead of IP
+  agent_ips = concat(
+    # Server nodes (control plane)
     [split("/", module.nprd_apps_primary.ip_address)[0]],
-    [for node in module.nprd_apps_additional : split("/", node.ip_address)[0]]
+    [for node in module.nprd_apps_additional : split("/", node.ip_address)[0]],
+    # Worker nodes (if any)
+    var.clusters["nprd-apps"].worker_count > 0 ? [
+      for node in module.nprd_apps_workers : split("/", node.ip_address)[0]
+    ] : []
   )
   ssh_private_key_path = var.ssh_private_key
   ssh_user             = "ubuntu"
@@ -425,7 +501,8 @@ module "rke2_apps" {
   depends_on = [
     module.nprd_apps_primary,
     module.nprd_apps_additional,
-    module.rancher_deployment  # Wait for Rancher to be deployed first
+    module.nprd_apps_workers, # Always include (empty if worker_count = 0)
+    module.rancher_deployment # Wait for Rancher to be deployed first
   ]
 }
 
@@ -436,7 +513,7 @@ module "rke2_apps" {
 
 resource "null_resource" "create_downstream_cluster" {
   count = var.register_downstream_cluster ? 1 : 0
-  
+
   provisioner "local-exec" {
     command = <<-EOT
       set -e
@@ -489,7 +566,7 @@ locals {
 
 resource "null_resource" "fetch_downstream_cluster_id" {
   count = var.register_downstream_cluster ? 1 : 0
-  
+
   provisioner "local-exec" {
     command = <<-EOT
       set -e
@@ -520,7 +597,7 @@ resource "null_resource" "fetch_downstream_cluster_id" {
       echo "$${CLUSTER_ID}" > "${abspath("${path.root}/../config")}/.downstream-cluster-id"
     EOT
   }
-  
+
   provisioner "local-exec" {
     when       = destroy
     on_failure = continue
@@ -536,7 +613,7 @@ resource "null_resource" "fetch_downstream_cluster_id" {
 data "local_file" "downstream_cluster_id" {
   count    = var.register_downstream_cluster ? 1 : 0
   filename = local.cluster_id_file
-  
+
   depends_on = [
     null_resource.fetch_downstream_cluster_id
   ]
@@ -549,23 +626,30 @@ data "local_file" "downstream_cluster_id" {
 
 module "rancher_downstream_registration" {
   count = var.register_downstream_cluster ? 1 : 0
-  
+
   source = "./modules/rancher_downstream_registration"
-  
-  rancher_url            = "https://${var.rancher_hostname}"
-  rancher_token_file     = "/home/lee/git/rancher-deploy/config/.rancher-api-token"
-  cluster_id             = trimspace(data.local_file.downstream_cluster_id[0].content)
-  ssh_private_key_path   = var.ssh_private_key
-  ssh_user               = "ubuntu"
-  kubeconfig_path        = "~/.kube/nprd-apps.yaml"
-  
+
+  rancher_url          = "https://${var.rancher_hostname}"
+  rancher_token_file   = "/home/lee/git/rancher-deploy/config/.rancher-api-token"
+  cluster_id           = trimspace(data.local_file.downstream_cluster_id[0].content)
+  ssh_private_key_path = var.ssh_private_key
+  ssh_user             = "ubuntu"
+  kubeconfig_path      = "~/.kube/nprd-apps.yaml"
+
   # Map of node names to IPs for NPRD apps cluster
-  cluster_nodes = {
-    "nprd-apps-1" = "192.168.14.110"
-    "nprd-apps-2" = "192.168.14.111"
-    "nprd-apps-3" = "192.168.14.112"
-  }
-  
+  # Includes both server nodes and worker nodes (if any)
+  cluster_nodes = merge(
+    {
+      "nprd-apps-1" = "192.168.14.110"
+      "nprd-apps-2" = "192.168.14.111"
+      "nprd-apps-3" = "192.168.14.112"
+    },
+    var.clusters["nprd-apps"].worker_count > 0 ? {
+      for i in range(1, var.clusters["nprd-apps"].worker_count + 1) :
+      "nprd-apps-worker-${i}" => "${var.clusters["nprd-apps"].ip_subnet}.${var.clusters["nprd-apps"].ip_start_octet + var.clusters["nprd-apps"].node_count + i - 1}"
+    } : {}
+  )
+
   depends_on = [
     module.rke2_apps,
     module.rancher_deployment
@@ -620,6 +704,7 @@ module "rancher_downstream_registration" {
 
 resource "null_resource" "merge_kubeconfigs" {
   provisioner "local-exec" {
+    when    = create
     command = <<-EOT
       echo "=========================================="
       echo "Merging all kubeconfigs to ~/.kube/config"
@@ -747,8 +832,191 @@ resource "null_resource" "merge_kubeconfigs" {
     EOT
   }
 
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command    = <<-EOT
+      echo "=========================================="
+      echo "Cleaning up kubeconfig entries on destroy"
+      echo "=========================================="
+      
+      MANAGER_CONFIG="$HOME/.kube/rancher-manager.yaml"
+      APPS_CONFIG="$HOME/.kube/nprd-apps.yaml"
+      
+      # Remove contexts and users from merged config
+      if [ -f "$HOME/.kube/config" ]; then
+        echo "Removing contexts and users from merged kubeconfig..."
+        
+        # Remove rancher-manager context and user
+        kubectl config delete-context rancher-manager 2>/dev/null || true
+        kubectl config unset users.manager-user 2>/dev/null || true
+        
+        # Remove nprd-apps context and user
+        kubectl config delete-context nprd-apps 2>/dev/null || true
+        kubectl config unset users.apps-user 2>/dev/null || true
+        
+        # Remove clusters if they exist
+        kubectl config delete-cluster rancher-manager 2>/dev/null || true
+        kubectl config delete-cluster nprd-apps 2>/dev/null || true
+        
+        echo "✓ Removed contexts and users from ~/.kube/config"
+      fi
+      
+      # Remove individual kubeconfig files
+      if [ -f "$${MANAGER_CONFIG}" ]; then
+        rm -f "$${MANAGER_CONFIG}"
+        echo "✓ Removed: $${MANAGER_CONFIG}"
+      fi
+      
+      if [ -f "$${APPS_CONFIG}" ]; then
+        rm -f "$${APPS_CONFIG}"
+        echo "✓ Removed: $${APPS_CONFIG}"
+      fi
+      
+      echo "✓ Kubeconfig cleanup complete"
+    EOT
+  }
+
   depends_on = [
     module.rancher_downstream_registration
   ]
+}
+
+# ============================================================================
+# DEMOCRATIC CSI STORAGE CLASS DEPLOYMENT
+# Installs democratic-csi with TrueNAS and creates storage class
+# Runs at the end of the plan after all clusters are ready
+# ============================================================================
+
+resource "null_resource" "deploy_democratic_csi" {
+  count = var.truenas_host != "" && var.truenas_api_key != "" ? 1 : 0
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      
+      echo "=========================================="
+      echo "Deploying Democratic CSI with TrueNAS"
+      echo "=========================================="
+      
+      # Generate Helm values from Terraform variables
+      echo "Generating Helm values from terraform.tfvars..."
+      cd "${path.root}/.."
+      ./scripts/generate-helm-values-from-tfvars.sh
+      
+      # Set kubeconfig to apps cluster
+      export KUBECONFIG="$HOME/.kube/nprd-apps.yaml"
+      
+      # Verify cluster access
+      if ! kubectl cluster-info &>/dev/null; then
+        echo "ERROR: Cannot access nprd-apps cluster"
+        exit 1
+      fi
+      
+      echo "✓ Cluster access verified"
+      
+      # Add Helm repository
+      echo "Adding Helm repository..."
+      helm repo add democratic-csi https://democratic-csi.github.io/charts/ 2>/dev/null || echo "Repository already added"
+      helm repo update
+      
+      # Create namespace
+      echo "Creating namespace..."
+      kubectl create namespace democratic-csi --dry-run=client -o yaml | kubectl apply -f -
+      
+      # Install democratic-csi
+      echo "Installing democratic-csi..."
+      helm upgrade --install democratic-csi democratic-csi/democratic-csi \
+        --namespace democratic-csi \
+        -f helm-values/democratic-csi-truenas.yaml \
+        --wait \
+        --timeout 10m
+      
+      echo "✓ Democratic CSI installed"
+      
+      # Wait for pods to be ready
+      echo "Waiting for pods to be ready..."
+      kubectl wait --for=condition=ready pod -l app=democratic-csi-controller -n democratic-csi --timeout=5m || true
+      kubectl wait --for=condition=ready pod -l app=democratic-csi-node -n democratic-csi --timeout=5m || true
+      
+      # Verify storage class
+      echo ""
+      echo "Verifying storage class..."
+      if kubectl get storageclass ${var.csi_storage_class_name} &>/dev/null; then
+        echo "✓ Storage class '${var.csi_storage_class_name}' created"
+        
+        # Check if it's default
+        IS_DEFAULT=$(kubectl get storageclass ${var.csi_storage_class_name} -o jsonpath='{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}' 2>/dev/null || echo "")
+        if [ "$IS_DEFAULT" = "true" ]; then
+          echo "✓ Storage class '${var.csi_storage_class_name}' is set as default"
+        elif [ "${var.csi_storage_class_default}" = "true" ]; then
+          echo "Setting storage class as default..."
+          # Remove default from any existing default storage class
+          EXISTING_DEFAULT=$(kubectl get storageclass -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$EXISTING_DEFAULT" ] && [ "$EXISTING_DEFAULT" != "${var.csi_storage_class_name}" ]; then
+            echo "  Removing default from: $EXISTING_DEFAULT"
+            kubectl patch storageclass "$EXISTING_DEFAULT" -p '{"metadata": {"annotations": {"storageclass.kubernetes.io/is-default-class": "false"}}}' || true
+          fi
+          # Set as default
+          kubectl patch storageclass ${var.csi_storage_class_name} -p '{"metadata": {"annotations": {"storageclass.kubernetes.io/is-default-class": "true"}}}' || true
+          echo "✓ Storage class set as default"
+        fi
+      else
+        echo "⚠ Storage class '${var.csi_storage_class_name}' not found"
+        echo "  This may be normal if Helm installation is still in progress"
+      fi
+      
+      echo ""
+      echo "Storage Classes:"
+      kubectl get storageclass
+      
+      echo ""
+      echo "Democratic CSI Pods:"
+      kubectl get pods -n democratic-csi
+      
+      echo ""
+      echo "=========================================="
+      echo "✓ Democratic CSI deployment complete"
+      echo "=========================================="
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command    = <<-EOT
+      echo "=========================================="
+      echo "Removing Democratic CSI"
+      echo "=========================================="
+      
+      export KUBECONFIG="$HOME/.kube/nprd-apps.yaml"
+      
+      if kubectl get namespace democratic-csi &>/dev/null; then
+        echo "Uninstalling democratic-csi..."
+        helm uninstall democratic-csi --namespace democratic-csi 2>/dev/null || true
+        
+        echo "Deleting namespace..."
+        kubectl delete namespace democratic-csi --timeout=2m 2>/dev/null || true
+        
+        echo "✓ Democratic CSI removed"
+      else
+        echo "✓ Namespace already removed"
+      fi
+    EOT
+  }
+
+  depends_on = [
+    null_resource.merge_kubeconfigs,
+    module.rke2_apps
+  ]
+
+  triggers = {
+    truenas_host              = var.truenas_host
+    truenas_api_key           = sha256(var.truenas_api_key) # Use hash to avoid storing secret
+    truenas_dataset           = var.truenas_dataset
+    csi_storage_class_name    = var.csi_storage_class_name
+    csi_storage_class_default = var.csi_storage_class_default
+    helm_values_file          = filemd5("${path.root}/../scripts/generate-helm-values-from-tfvars.sh")
+  }
 }
 

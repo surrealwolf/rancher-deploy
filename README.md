@@ -9,19 +9,26 @@ Deploy a complete Rancher management cluster and non-production apps cluster on 
 - ✅ **Modern Provider**: bpg/proxmox v0.90 (1.7K+ GitHub stars, 130+ contributors)
 - ✅ **RKE2 Kubernetes**: Automated RKE2 installation and cluster bootstrapping
 - ✅ **Rancher Deployment**: Helm-based Rancher installation with cert-manager
-- ✅ **High Availability**: 3-node manager + 3-node apps clusters with HA Rancher
+- ✅ **High Availability**: 3-node manager + hybrid apps cluster (3 servers + workers) with HA Rancher
 - ✅ **Cloud-Init Integration**: Automated networking, DNS, hostnames
+- ✅ **Proxmox Guest Agent**: Automatic installation for better VM management
+- ✅ **TrueNAS Storage**: Automated democratic-csi deployment with TrueNAS NFS
 - ✅ **Comprehensive Docs**: Setup guides, variable management, troubleshooting
 - ✅ **Secure Configuration**: API token auth, gitignore patterns, tfvars templates
 
 ## What's Deployed
 
 - **Rancher Manager**: 3 VMs (401-403) with RKE2 + Rancher control plane
-- **Apps Cluster**: 3 VMs (404-406) with RKE2 for non-production workloads
-- **Storage**: Dedicated volumes for cloud images + VM storage (local-vm-zfs)
+- **Apps Cluster**: Hybrid architecture
+  - 3 Server nodes (404-406) - Control plane + etcd
+  - 3 Worker nodes (407-409) - Application workloads (configurable)
+- **Storage**: 
+  - VM storage: Dedicated volumes (local-vm-zfs)
+  - Persistent storage: TrueNAS NFS via democratic-csi (automated)
 - **Network**: Static IPs, DNS configured via cloud-init
 - **Kubernetes**: RKE2 clusters automatically bootstrapped and configured
 - **Rancher**: Helm-deployed with cert-manager, Ingress, and bootstrap password
+- **Storage Class**: TrueNAS NFS storage class (automatically created if configured)
 
 ## Requirements
 
@@ -121,9 +128,14 @@ proxmox_node             = "pve"
 rke2_version             = "v1.34.3+rke2r1"  # IMPORTANT: use actual version, not "latest"
 rancher_hostname         = "rancher.example.com"
 rancher_password         = "your-secure-password"
+
+# Optional: TrueNAS storage (automatically deploys democratic-csi if configured)
+truenas_host             = "tn.example.com"
+truenas_api_key          = "your-truenas-api-key"
+truenas_dataset          = "/mnt/pool/dataset"
 ```
 
-See [docs/TERRAFORM_VARIABLES.md](docs/TERRAFORM_VARIABLES.md) for all options.
+See `terraform/variables.tf` for all available options.
 
 ### 3. Deploy Infrastructure + Kubernetes
 
@@ -145,6 +157,7 @@ terraform apply -auto-approve
 **⚠️ Important**:
 - RKE2 version must be specific release (e.g., `v1.34.3+rke2r1`), not "latest"
 - Ports 9345 (server) and 6443 (API) configured automatically
+- If TrueNAS is configured, democratic-csi will be automatically deployed at the end of the plan
 
 ### 4. Verify Deployment
 
@@ -153,6 +166,14 @@ terraform apply -auto-approve
 export KUBECONFIG=~/.kube/rancher-manager.yaml
 kubectl get nodes
 kubectl get pods -n kube-system
+
+# Check apps cluster
+export KUBECONFIG=~/.kube/nprd-apps.yaml
+kubectl get nodes
+kubectl get pods -n kube-system
+
+# Check storage class (if TrueNAS configured)
+kubectl get storageclass
 
 # Access Rancher
 terraform output rancher_url
@@ -163,16 +184,24 @@ terraform output rancher_url
 
 ## Documentation
 
-Core documentation for deployment and troubleshooting:
+Complete documentation is available in the [docs/](docs/) folder. See [docs/README.md](docs/README.md) for full index.
 
-- **[docs/API_TOKEN_AND_PERMISSIONS.md](docs/API_TOKEN_AND_PERMISSIONS.md)** - Proxmox API token creation and minimum required permissions for end-to-end deployment
-- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough, includes kubectl tools setup
-- **[docs/RANCHER_API_TOKEN_CREATION.md](docs/RANCHER_API_TOKEN_CREATION.md)** - How API tokens are created automatically, manual creation with curl
-- **[docs/RANCHER_DOWNSTREAM_MANAGEMENT.md](docs/RANCHER_DOWNSTREAM_MANAGEMENT.md)** - Automatic downstream cluster registration with Rancher Manager (manifest-based)
-- **[docs/DNS_CONFIGURATION_GUIDE.md](docs/DNS_CONFIGURATION_GUIDE.md)** - Complete DNS configuration guide (node-level DNS, CoreDNS inheritance)
-- **[docs/DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md)** - DNS records required for Rancher and Kubernetes API access
-- **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning and VM configuration
-- **[docs/MODULES_AND_AUTOMATION.md](docs/MODULES_AND_AUTOMATION.md)** - Terraform modules, variables, and automation details
+### Quick Links
+
+**Getting Started:**
+- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment walkthrough
+- **[docs/API_TOKEN_AND_PERMISSIONS.md](docs/API_TOKEN_AND_PERMISSIONS.md)** - Proxmox API token setup
+- **[docs/DNS_CONFIGURATION.md](docs/DNS_CONFIGURATION.md)** - Required DNS records
+
+**Storage:**
+- **[docs/TRUENAS_STORAGE_SETUP.md](docs/TRUENAS_STORAGE_SETUP.md)** - Complete TrueNAS storage setup (automated via Terraform)
+
+**Configuration:**
+- **[docs/RANCHER_DOWNSTREAM_MANAGEMENT.md](docs/RANCHER_DOWNSTREAM_MANAGEMENT.md)** - Automatic cluster registration
+- **[docs/CLOUD_IMAGE_SETUP.md](docs/CLOUD_IMAGE_SETUP.md)** - Cloud image provisioning
+- **[docs/MODULES_AND_AUTOMATION.md](docs/MODULES_AND_AUTOMATION.md)** - Terraform modules and automation
+
+**Troubleshooting:**
 - **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## Project Structure
@@ -183,25 +212,28 @@ Core documentation for deployment and troubleshooting:
 │   ├── apply.sh                  # Deploy with automatic logging
 │   ├── destroy.sh                # Destroy infrastructure
 │   ├── create-rancher-api-token.sh # Create API token manually
-│   └── test-rancher-api-token.sh # Test API connectivity
+│   ├── test-rancher-api-token.sh # Test API connectivity
+│   ├── generate-helm-values-from-tfvars.sh # Generate Helm values from Terraform
+│   └── install-democratic-csi.sh # Manual democratic-csi installation
+├── helm-values/                  # Helm chart values
+│   ├── democratic-csi-truenas.yaml # Generated (gitignored)
+│   └── *.example                 # Example templates
 ├── README.md                     # This file
 ├── CHANGELOG.md                  # Version history
 ├── CODE_OF_CONDUCT.md            # Community guidelines
 ├── CONTRIBUTING.md               # Development guidelines
-├── docs/                         # Core documentation
+├── docs/                         # Complete documentation
+│   ├── README.md                 # Documentation index
 │   ├── DEPLOYMENT_GUIDE.md       # Complete deployment walkthrough
-│   ├── RANCHER_API_TOKEN_CREATION.md # API token creation
-│   ├── RANCHER_DOWNSTREAM_MANAGEMENT.md # Downstream registration
-│   ├── DNS_CONFIGURATION.md      # DNS setup
-│   ├── CLOUD_IMAGE_SETUP.md      # Cloud image provisioning
-│   ├── MODULES_AND_AUTOMATION.md # Terraform modules
-│   └── TROUBLESHOOTING.md        # Issue resolution
+│   ├── TRUENAS_STORAGE_SETUP.md  # TrueNAS storage setup (consolidated)
+│   └── ...                       # See docs/README.md for full list
 └── terraform/                    # Terraform configuration
-    ├── main.tf                   # Cluster definitions
+    ├── main.tf                   # Cluster definitions + democratic-csi deployment
     ├── provider.tf               # Provider configuration
-    ├── variables.tf              # Variables
-    ├── outputs.tf                # Outputs
+    ├── variables.tf              # Variables (includes TrueNAS config)
+    ├── outputs.tf               # Outputs (includes TrueNAS config)
     ├── terraform.tfvars.example  # Config template
+    ├── terraform.tfvars         # Your config (gitignored)
     ├── fetch-token.sh            # RKE2 token helper
     └── modules/
         ├── proxmox_vm/           # VM creation module
@@ -224,6 +256,14 @@ The deployment uses the **bpg/proxmox Terraform provider** (v0.90) with:
 Each VM is automatically configured with:
 - Cloud-init for OS customization
 - Network settings (VLAN 14, static IP, DNS)
+- Proxmox guest agent (qemu-guest-agent) for better VM management
+
+### Storage Integration
+
+- **TrueNAS Integration**: If configured in `terraform.tfvars`, democratic-csi is automatically deployed
+- **Storage Class**: Created automatically at the end of Terraform plan
+- **Secrets Management**: TrueNAS API keys stored in `terraform.tfvars` (gitignored)
+- **Helm Values**: Auto-generated from Terraform variables
 
 ## Contributing
 
