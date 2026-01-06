@@ -1,36 +1,41 @@
 # Democratic CSI Helm Values for TrueNAS
+# Generated from terraform.tfvars
+# Host: 192.168.8.10
+# Dataset: /mnt/SAS/RKE2
+# User: rke2
+#
+# This file is auto-generated. To update, edit terraform/terraform.tfvars and run:
+#   ./scripts/generate-helm-values-from-tfvars.sh
+#
 # Usage: helm install democratic-csi democratic-csi/democratic-csi -f democratic-csi-truenas.yaml
 
-driver:
+# CSI Driver Configuration (required by chart)
+csiDriver:
   name: truenas-nfs
   enabled: true
-  logLevel: info
+  attachRequired: true
+  podInfoOnMount: true
 
-# TrueNAS Configuration
-config:
-  truenas:
-    # TrueNAS hostname or IP address
-    host: "truenas.example.com"
-    
-    # API key from TrueNAS (System → API Keys)
-    apiKey: "your-api-key-here"
-    
-    # Protocol: https (recommended) or http
-    protocol: "https"
-    
-    # Port: 443 for HTTPS, 80 for HTTP
-    port: 443
-    
-    # Set to true if using self-signed certificate
-    allowInsecure: false
-    
-    # Dataset path on TrueNAS (e.g., /mnt/pool/k8s-storage)
-    dataset: "/mnt/pool/k8s-storage"
-    
-    # Optional: NFS server hostname (if different from API host)
-    # nfs:
-    #   server: "truenas-nfs.example.com"
-    #   share: "/mnt/pool/k8s-storage"
+# Driver Configuration
+driver:
+  config:
+    driver: freenas-api-nfs
+    # HTTP connection to TrueNAS API
+    httpConnection:
+      protocol: "https"
+      host: "192.168.8.10"
+      port: 443
+      apiKey: "2-PHjhswY0SJKTbWcbK39Q9SdA0bixMTE0HsI1yVkW2e1aR3CkxnrY0GSHjT9FeOGE"
+      allowInsecure: true
+    # ZFS dataset configuration
+    # Note: detachedSnapshotsDatasetParentName must be a completely separate path, not a subdirectory
+    zfs:
+      datasetParentName: "/mnt/SAS/RKE2"
+      detachedSnapshotsDatasetParentName: "/mnt/SAS/RKE2-snapshots"
+    # NFS share configuration
+    nfs:
+      server: "192.168.8.10"
+      share: "/mnt/SAS/RKE2"
 
 # Storage Classes Configuration
 storageClasses:
@@ -42,22 +47,16 @@ storageClasses:
     allowVolumeExpansion: true
     parameters:
       fsType: "nfs"
-      parentDataset: "/mnt/pool/k8s-storage"
-      # Optional: NFS version (3 or 4)
-      # nfsVersion: "4"
-
-  # Optional: Fast storage class (for SSD pools)
-  # - name: truenas-nfs-fast
-  #   default: false
-  #   reclaimPolicy: Delete
-  #   volumeBindingMode: Immediate
-  #   allowVolumeExpansion: true
-  #   parameters:
-  #     fsType: "nfs"
-  #     parentDataset: "/mnt/ssd-pool/k8s-storage-fast"
+      parentDataset: "/mnt/SAS/RKE2"
+      # NFS version 4 recommended
+      nfsVersion: "4"
 
 # Controller Configuration
+# Note: Using "next" tag for TrueNAS 25+ compatibility (fixes SCALE detection issue)
 controller:
+  driver:
+    image:
+      tag: next
   replicas: 1
   resources:
     requests:
@@ -77,11 +76,11 @@ node:
       cpu: 200m
       memory: 256Mi
 
-# Optional: RBAC configuration
+# RBAC
 rbac:
   create: true
 
-# Optional: Service account configuration
+# Service Account
 serviceAccount:
   create: true
   name: ""
