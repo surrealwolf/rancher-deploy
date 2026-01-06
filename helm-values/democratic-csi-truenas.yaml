@@ -28,14 +28,22 @@ driver:
       apiKey: "2-PHjhswY0SJKTbWcbK39Q9SdA0bixMTE0HsI1yVkW2e1aR3CkxnrY0GSHjT9FeOGE"
       allowInsecure: true
     # ZFS dataset configuration
-    # Note: detachedSnapshotsDatasetParentName must be a completely separate path, not a subdirectory
+    # Note: datasetParentName should be the ZFS dataset name (e.g., "SAS/RKE2"), not the mountpoint
+    # The mountpoint path (/mnt/SAS/RKE2) is used for NFS share configuration
     zfs:
-      datasetParentName: "/mnt/SAS/RKE2"
-      detachedSnapshotsDatasetParentName: "/mnt/SAS/RKE2-snapshots"
+      datasetParentName: "SAS/RKE2"
+      detachedSnapshotsDatasetParentName: "SAS/RKE2-snapshots"
     # NFS share configuration
+    # Note: shareHost is used by freenas-api-nfs driver to set server in volume context
     nfs:
-      server: "192.168.8.10"
-      share: "/mnt/SAS/RKE2"
+      shareHost: "192.168.8.10"
+      shareAlldirs: false
+      shareAllowedHosts: []
+      shareAllowedNetworks: []
+      shareMaprootUser: root
+      shareMaprootGroup: root
+      shareMapallUser: ""
+      shareMapallGroup: ""
 
 # Storage Classes Configuration
 storageClasses:
@@ -47,7 +55,8 @@ storageClasses:
     allowVolumeExpansion: true
     parameters:
       fsType: "nfs"
-      parentDataset: "/mnt/SAS/RKE2"
+      parentDataset: "SAS/RKE2"
+      nfsServer: "192.168.8.10"
       # NFS version 4 recommended
       nfsVersion: "4"
 
