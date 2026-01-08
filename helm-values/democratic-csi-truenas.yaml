@@ -1,6 +1,6 @@
 # Democratic CSI Helm Values for TrueNAS
 # Generated from terraform.tfvars
-# Host: 192.168.8.10
+# Host: 192.168.9.10
 # Dataset: /mnt/SAS/RKE2
 # User: rke2
 #
@@ -23,7 +23,7 @@ driver:
     # HTTP connection to TrueNAS API
     httpConnection:
       protocol: "https"
-      host: "192.168.8.10"
+      host: "192.168.9.10"
       port: 443
       apiKey: "2-PHjhswY0SJKTbWcbK39Q9SdA0bixMTE0HsI1yVkW2e1aR3CkxnrY0GSHjT9FeOGE"
       allowInsecure: true
@@ -36,7 +36,7 @@ driver:
     # NFS share configuration
     # Note: shareHost is used by freenas-api-nfs driver to set server in volume context
     nfs:
-      shareHost: "192.168.8.10"
+      shareHost: "192.168.9.10"
       shareAlldirs: false
       shareAllowedHosts: []
       shareAllowedNetworks: []
@@ -56,7 +56,7 @@ storageClasses:
     parameters:
       fsType: "nfs"
       parentDataset: "SAS/RKE2"
-      nfsServer: "192.168.8.10"
+      nfsServer: "192.168.9.10"
       # NFS version 4 recommended
       nfsVersion: "4"
 
