@@ -54,6 +54,14 @@ output "cluster_name" {
 resource "null_resource" "deploy_metallb" {
   count = var.install_metallb ? 1 : 0
 
+  triggers = {
+    # Trigger re-deployment when any of these change
+    ip_pool_addresses = var.ip_pool_addresses
+    metallb_version   = var.metallb_version
+    cluster_name      = var.cluster_name
+    kubeconfig_path   = var.kubeconfig_path
+  }
+
   provisioner "local-exec" {
     command = <<-EOT
       chmod +x ${path.module}/deploy-metallb.sh
