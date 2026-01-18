@@ -74,7 +74,7 @@ sleep 5
 echo "✓ Cluster is stable, proceeding with installation"
 echo ""
 
-# Step 1: Install Kube-VIP using Helm
+# Step 1: Install Kube-VIP using manifests
 echo "[1/2] Installing Kube-VIP (version $KUBE_VIP_VERSION)..."
 
 # Create namespace if it doesn't exist
@@ -84,49 +84,135 @@ if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
   echo "  ✓ Namespace created"
 fi
 
-# Add Kube-VIP Helm repository
-if ! helm repo list | grep -q "kube-vip"; then
-  echo "  Adding Kube-VIP Helm repository..."
-  helm repo add kube-vip https://kube-vip.github.io/kube-vip-cloud-provider || {
-    echo "ERROR: Failed to add Kube-VIP Helm repository."
-    exit 1
-  }
-  helm repo update
-  echo "  ✓ Helm repository added and updated"
-fi
+# Step 1a: Install RBAC first
+echo "  Installing RBAC..."
+# Create RBAC resources inline (ServiceAccount, ClusterRole, ClusterRoleBinding)
+kubectl apply -f - <<EOF || echo "  ⚠ RBAC may already exist, continuing..."
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-vip
+  namespace: $NAMESPACE
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-vip
+rules:
+- apiGroups: [""]
+  resources: ["services", "services/status", "nodes"]
+  verbs: ["list","get","watch"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["list", "get", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-vip
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-vip
+subjects:
+- kind: ServiceAccount
+  name: kube-vip
+  namespace: $NAMESPACE
+EOF
+
+# Step 1b: Create Kube-VIP DaemonSet manifest inline
+# Based on documentation: https://kube-vip.io/docs/installation/daemonset/
+echo "  Creating Kube-VIP DaemonSet manifest..."
+MANIFEST_FILE="/tmp/kube-vip-ds-${KUBE_VIP_VERSION}.yaml"
+
+cat > "$MANIFEST_FILE" <<EOF
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kube-vip-ds
+  namespace: $NAMESPACE
+spec:
+  selector:
+    matchLabels:
+      name: kube-vip-ds
+  template:
+    metadata:
+      labels:
+        name: kube-vip-ds
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/master
+                operator: Exists
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+      containers:
+      - name: kube-vip
+        image: ghcr.io/kube-vip/kube-vip:${KUBE_VIP_VERSION}
+        imagePullPolicy: Always
+        args:
+        - manager
+        env:
+        - name: vip_arp
+          value: "true"
+        - name: vip_interface
+          value: eth0
+        - name: cp_enable
+          value: "false"
+        - name: svc_enable
+          value: "true"
+        - name: vip_leaderelection
+          value: "true"
+        - name: vip_leaseduration
+          value: "5"
+        - name: vip_renewdeadline
+          value: "3"
+        - name: vip_retryperiod
+          value: "1"
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_RAW
+            - SYS_TIME
+      hostNetwork: true
+      serviceAccountName: kube-vip
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists
+      - effect: NoExecute
+        operator: Exists
+EOF
 
 # Check if Kube-VIP is already installed
-if helm list -n "$NAMESPACE" | grep -q "kube-vip"; then
-  echo "  Kube-VIP already installed, upgrading..."
-  helm upgrade kube-vip kube-vip/kube-vip-cloud-provider \
-    --namespace "$NAMESPACE" \
-    --version "$KUBE_VIP_VERSION" \
-    --set vip_interface=eth0 \
-    --wait \
-    --timeout 5m || {
-    echo "  ⚠ Upgrade may have issues, checking status..."
-    helm status kube-vip -n "$NAMESPACE" || true
+if kubectl get daemonset kube-vip-ds -n "$NAMESPACE" &>/dev/null; then
+  echo "  Kube-VIP already installed, applying updated manifest..."
+  kubectl apply -f "$MANIFEST_FILE" || {
+    echo "  ⚠ Apply had some conflicts, checking if resources were applied..."
+    kubectl get daemonset kube-vip-ds -n "$NAMESPACE" || {
+      echo "ERROR: DaemonSet not found after apply attempt."
+      exit 1
+    }
   }
-  echo "  ✓ Kube-VIP upgraded"
+  echo "  ✓ Kube-VIP resources updated"
 else
-  echo "  Installing Kube-VIP from Helm chart (first time installation)..."
-  helm install kube-vip kube-vip/kube-vip-cloud-provider \
-    --namespace "$NAMESPACE" \
-    --version "$KUBE_VIP_VERSION" \
-    --set vip_interface=eth0 \
-    --wait \
-    --timeout 5m || {
-    echo "ERROR: Failed to install Kube-VIP via Helm."
+  echo "  Installing Kube-VIP DaemonSet (first time installation)..."
+  kubectl apply -f "$MANIFEST_FILE" || {
+    echo "ERROR: Failed to install Kube-VIP DaemonSet."
     exit 1
   }
-  echo "  ✓ Kube-VIP Helm chart installed"
+  echo "  ✓ Kube-VIP DaemonSet installed"
 fi
 
 # Wait for Kube-VIP pods to be ready
 echo "  Waiting for Kube-VIP pods to be ready..."
 kubectl wait --namespace "$NAMESPACE" \
   --for=condition=ready pod \
-  --selector=app.kubernetes.io/name=kube-vip-cloud-provider \
+  --selector=name=kube-vip-ds \
   --timeout=5m || {
   echo "  ⚠ Pods may still be starting, checking status..."
   kubectl get pods -n "$NAMESPACE" || true
@@ -168,7 +254,7 @@ if [ -n "$IP_POOL_ADDRESSES" ]; then
     
     # Restart DaemonSet to pick up new configuration
     echo "  Restarting Kube-VIP DaemonSet to apply configuration..."
-    kubectl rollout restart daemonset/kube-vip -n "$NAMESPACE" || true
+    kubectl rollout restart daemonset/kube-vip-ds -n "$NAMESPACE" || true
     sleep 3
     echo "  ✓ DaemonSet restarted"
   else
@@ -188,7 +274,7 @@ sleep 5
 
 PODS_READY=0
 for i in {1..30}; do
-  READY_PODS=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=kube-vip-cloud-provider --no-headers 2>/dev/null | grep -c " Running " || echo "0")
+  READY_PODS=$(kubectl get pods -n "$NAMESPACE" -l name=kube-vip-ds --no-headers 2>/dev/null | grep -c " Running " || echo "0")
   if [ "$READY_PODS" -gt 0 ]; then
     PODS_READY=$READY_PODS
     break
@@ -201,7 +287,7 @@ done
 
 if [ "$PODS_READY" -gt 0 ]; then
   echo "✓ Kube-VIP is ready ($PODS_READY pod(s) running)"
-  kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=kube-vip-cloud-provider
+  kubectl get pods -n "$NAMESPACE" -l name=kube-vip-ds
 else
   echo "  ⚠ Kube-VIP pods may still be starting"
   kubectl get pods -n "$NAMESPACE" || true
